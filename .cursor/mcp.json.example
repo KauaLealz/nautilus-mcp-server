@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "nautilus": {
+      "command": "python",
+      "args": ["server.py"],
+      "env": {
+        "DATABASES__pg_docker__type": "postgresql",
+        "DATABASES__pg_docker__url": "postgresql://nautilus:nautilus@localhost:5432/nautilus",
+        "DATABASES__mysql_docker__type": "mysql",
+        "DATABASES__mysql_docker__url": "mysql://nautilus:nautilus@localhost:3306/nautilus",
+        "DATABASES__sqlserver_docker__type": "sqlserver",
+        "DATABASES__sqlserver_docker__url": "odbc://DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1433;DATABASE=master;UID=sa;PWD=NautilusTest123!;TrustServerCertificate=yes",
+        "DATABASES__oracle_docker__type": "oracle",
+        "DATABASES__oracle_docker__url": "oracle://system:oracle@localhost:1521/XEPDB1",
+        "DATABASES__mongo_docker__type": "mongodb",
+        "DATABASES__mongo_docker__url": "mongodb://localhost:27017/",
+        "DATABASES__redis_docker__type": "redis",
+        "DATABASES__redis_docker__url": "redis://localhost:6379/0"
+      }
+    }
+  }
+}

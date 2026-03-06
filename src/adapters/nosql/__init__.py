@@ -1,0 +1,1 @@
+"""Adapters NoSQL: MongoDB, Redis."""

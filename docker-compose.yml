@@ -1,0 +1,121 @@
+# Nautilus MCP Server - Stack de testes com todos os bancos suportados (com dados populados)
+# Uso: docker compose up -d
+# Aguarde alguns minutos (Oracle ~2 min; seeds rodam após os bancos subirem)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nautilus
+      POSTGRES_PASSWORD: nautilus
+      POSTGRES_DB: nautilus
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/init/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nautilus -d nautilus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: nautilus
+      MYSQL_USER: nautilus
+      MYSQL_PASSWORD: nautilus
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./docker/init/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "NautilusTest123!"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 10s
+      start_period: 40s
+
+  sqlserver-init:
+    build:
+      context: ./docker/init/sqlserver
+      dockerfile: Dockerfile
+    environment:
+      MSSQL_HOST: sqlserver
+      MSSQL_SA_USER: sa
+      MSSQL_SA_PASSWORD: "NautilusTest123!"
+      MSSQL_DATABASE: master
+      INIT_SQL_PATH: /init/init.sql
+    volumes:
+      - ./docker/init/sqlserver/init.sql:/init/init.sql:ro
+    depends_on:
+      sqlserver:
+        condition: service_started
+
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    environment:
+      ORACLE_PASSWORD: oracle
+      APP_USER: nautilus
+      APP_USER_PASSWORD: nautilus
+    ports:
+      - "1521:1521"
+    volumes:
+      - ./docker/init/oracle:/container-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo-init:
+    image: mongo:7
+    volumes:
+      - ./docker/init/mongo/init.js:/init/init.js:ro
+    entrypoint: ["mongosh", "mongodb://mongodb:27017", "--file", "/init/init.js"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-init:
+    image: redis:7-alpine
+    volumes:
+      - ./docker/init/redis/seed.sh:/seed/seed.sh:ro
+    entrypoint: ["/bin/sh", "/seed/seed.sh"]
+    depends_on:
+      redis:
+        condition: service_healthy
