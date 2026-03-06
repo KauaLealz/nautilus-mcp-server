@@ -1,9 +1,12 @@
 """
 Configuração central do Nautilus MCP Server.
 Carrega conexões e limites de segurança a partir de variáveis de ambiente.
+Suporta URL única ou variáveis separadas (user, password, host, etc.) para evitar
+quebra com caracteres especiais (@, :, /) em senha ou usuário.
 """
 import os
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,8 +57,72 @@ class Settings(BaseSettings):
         return instance
 
 
+def _default_port(db_type: str) -> str:
+    """Porta padrão por tipo de banco."""
+    ports = {
+        "postgresql": "5432",
+        "mysql": "3306",
+        "sqlserver": "1433",
+        "oracle": "1521",
+        "mongodb": "27017",
+        "redis": "6379",
+    }
+    return ports.get(db_type, "")
+
+
+def _build_url_from_components(
+    db_type: str,
+    user: str,
+    password: str,
+    host: str,
+    port: str,
+    database: str,
+) -> str:
+    """
+    Monta URL de conexão com user/password codificados (evita quebra com @, :, /).
+    """
+    safe_user = quote(user, safe="")
+    safe_password = quote(password, safe="")
+    if db_type == "postgresql":
+        path = (database or "").strip().lstrip("/") or "postgres"
+        return f"postgresql://{safe_user}:{safe_password}@{host}:{port}/{path}"
+    if db_type == "mysql":
+        path = (database or "").strip().lstrip("/")
+        return f"mysql://{safe_user}:{safe_password}@{host}:{port}/{path}" if path else f"mysql://{safe_user}:{safe_password}@{host}:{port}"
+    if db_type == "oracle":
+        service = (database or "").strip().lstrip("/") or "ORCL"
+        return f"oracle://{safe_user}:{safe_password}@{host}:{port}/{service}"
+    if db_type == "mongodb":
+        path = (database or "").strip().lstrip("/")
+        if safe_user and safe_password:
+            base = f"mongodb://{safe_user}:{safe_password}@{host}:{port}"
+        elif safe_user:
+            base = f"mongodb://{safe_user}@{host}:{port}"
+        elif safe_password:
+            base = f"mongodb://:{safe_password}@{host}:{port}"
+        else:
+            base = f"mongodb://{host}:{port}"
+        return f"{base}/{path}" if path else base
+    if db_type == "redis":
+        db_num = (database or "0").strip().lstrip("/") or "0"
+        if safe_user and safe_password:
+            return f"redis://{safe_user}:{safe_password}@{host}:{port}/{db_num}"
+        if safe_password:
+            return f"redis://:{safe_password}@{host}:{port}/{db_num}"
+        return f"redis://{host}:{port}/{db_num}"
+    if db_type == "sqlserver":
+        # ODBC: caracteres especiais no PWD podem exigir URL encodada; preferir url quando senha tiver ;
+        driver = "ODBC Driver 17 for SQL Server"
+        return f"odbc://DRIVER={{{driver}}};SERVER={host},{port};DATABASE={database or 'master'};UID={user};PWD={password};TrustServerCertificate=yes"
+    return ""
+
+
 def _load_databases_from_env() -> dict[str, DatabaseConfig]:
-    """Lê todas as variáveis DATABASES__<connection_id>__<key> e monta o dicionário de conexões."""
+    """
+    Lê variáveis DATABASES__<connection_id>__<key> e monta conexões.
+    Se houver user, password e host (em vez de url), monta a URL com quote() para
+    suportar caracteres especiais (@, :, /) em usuário e senha.
+    """
     prefix = "DATABASES__"
     raw: dict[str, dict[str, str]] = {}
     for key, value in os.environ.items():
@@ -72,8 +139,17 @@ def _load_databases_from_env() -> dict[str, DatabaseConfig]:
     result: dict[str, DatabaseConfig] = {}
     for conn_id, data in raw.items():
         type_val = data.get("type")
+        if not type_val:
+            continue
         url_val = data.get("url")
-        if not type_val or not url_val:
+        user = data.get("user", "").strip()
+        password = data.get("password", "").strip()
+        host = data.get("host", "").strip()
+        port = (data.get("port") or _default_port(type_val)).strip()
+        database = (data.get("database") or data.get("db") or "").strip()
+        if not url_val and host:
+            url_val = _build_url_from_components(type_val, user, password, host, port, database)
+        if not url_val:
             continue
         read_only = data.get("read_only", "true").lower() in ("true", "1", "yes")
         try:

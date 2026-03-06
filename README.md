@@ -45,6 +45,18 @@ DATABASES__pg_main__type=postgresql
 DATABASES__pg_main__url=postgresql://user:password@localhost:5432/mydb
 ```
 
+**Usuário ou senha com caracteres especiais (@, :, /):**  
+Se usar `url`, codifique na URL (ex.: `@` → `%40`, `:` → `%3A`). Ou use variáveis separadas para que a URL seja montada automaticamente com encoding correto:
+
+```env
+DATABASES__pg_main__type=postgresql
+DATABASES__pg_main__host=localhost
+DATABASES__pg_main__port=5432
+DATABASES__pg_main__user=meu_usuario
+DATABASES__pg_main__password=senha@com:especiais
+DATABASES__pg_main__database=mydb
+```
+
 3. (Opcional) Limites de segurança: **timeout** vale para todas as consultas (evita travar a base); **max_rows** é o teto de linhas. O agente pode pedir menos linhas via parâmetro `max_rows` nas tools; se a query tiver `LIMIT`/`TOP`/`FETCH FIRST` acima do cap, é barrada na validação (dry).
 
 ```env
