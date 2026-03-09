@@ -95,18 +95,30 @@ def _build_adapters() -> tuple[dict[str, Any], dict[str, Any]]:
         return sorted(result, key=lambda c: c.connection_id)
 
     async def test_connection(connection_id: str) -> bool:
-        adapter = connection_to_adapter.get(connection_id)
+        adapter, resolved_key = _resolve_adapter_and_key(connection_id)
         if not adapter:
             return False
-        return await adapter.test_connection(connection_id)
+        return await adapter.test_connection(resolved_key)
 
     def get_sql_adapter(connection_id: str):
         """Retorna o adapter que atende ao connection_id (para SQL) ou None."""
-        return connection_to_adapter.get(connection_id)
+        adapter, _ = _resolve_adapter_and_key(connection_id)
+        return adapter
 
     def get_adapter(connection_id: str):
         """Retorna o adapter (qualquer tipo) para o connection_id ou None."""
-        return connection_to_adapter.get(connection_id)
+        adapter, _ = _resolve_adapter_and_key(connection_id)
+        return adapter
+
+    def _resolve_adapter_and_key(connection_id: str) -> tuple[Any, str | None]:
+        """Resolve connection_id de forma case-insensitive. Retorna (adapter, key_usado) ou (None, None)."""
+        if not connection_id or not str(connection_id).strip():
+            return None, None
+        cid = str(connection_id).strip()
+        key = next((k for k in connection_to_adapter if k.lower() == cid.lower()), None)
+        if key is None:
+            return None, None
+        return connection_to_adapter[key], key
 
     return connection_to_adapter, {
         "list_all_connections": list_all_connections,

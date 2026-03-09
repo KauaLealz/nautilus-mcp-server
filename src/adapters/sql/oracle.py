@@ -2,6 +2,7 @@
 Adapter para Oracle Database (oracledb).
 Implementa a mesma interface dos outros adapters SQL (async com oracledb.connect_async).
 """
+import asyncio
 from typing import Any
 from urllib.parse import urlparse, unquote
 
@@ -21,6 +22,13 @@ from src.domain.models import (
     ViewInfo,
 )
 from src.adapters.base import connection_info_from_config
+
+
+async def _await_if_coro(x: Any) -> Any:
+    """Aguarda x se for coroutine (API async do oracledb); caso contrário retorna x (API sync)."""
+    if asyncio.iscoroutine(x):
+        return await x
+    return x
 
 
 def _parse_oracle_url(url: str) -> dict[str, str]:
@@ -61,31 +69,46 @@ class OracleAdapter:
     def list_connections(self) -> list[ConnectionInfo]:
         return [connection_info_from_config(cid, c) for cid, c in self._connections.items()]
 
+    def _canonical_id(self, connection_id: str) -> str:
+        """Resolve connection_id para a chave canônica em _params (case-insensitive)."""
+        cid = (connection_id or "").strip()
+        canonical = next((k for k in self._params if k.lower() == cid.lower()), None)
+        if not canonical:
+            raise KeyError(f"Conexão não encontrada: {connection_id}")
+        return canonical
+
     def get_connection_info(self, connection_id: str) -> ConnectionInfo | None:
-        config = self._connections.get(connection_id)
+        try:
+            canonical = self._canonical_id(connection_id)
+        except KeyError:
+            return None
+        config = self._connections.get(canonical)
         if not config:
             return None
-        return connection_info_from_config(connection_id, config)
+        return connection_info_from_config(canonical, config)
 
     async def _connect(self, connection_id: str):
-        params = self._params.get(connection_id)
+        canonical = self._canonical_id(connection_id)
+        params = self._params[canonical]
         if not params:
-            raise KeyError(f"Conexão não encontrada: {connection_id}")
+            raise KeyError(f"Conexão sem parâmetros: {connection_id}")
         kwargs = {
-            "user": params["user"],
-            "password": params["password"],
-            "dsn": params["dsn"],
+            "user": params.get("user") or "",
+            "password": params.get("password") or "",
+            "dsn": params.get("dsn") or "",
         }
         try:
-            # call_timeout (ms) - suportado em oracledb 2.0+
             kwargs["call_timeout"] = self._timeout * 1000
         except Exception:
             pass
         try:
-            return await oracledb.connect_async(**kwargs)
+            conn = await oracledb.connect_async(**kwargs)
         except TypeError:
             kwargs.pop("call_timeout", None)
-            return await oracledb.connect_async(**kwargs)
+            conn = await oracledb.connect_async(**kwargs)
+        if conn is None:
+            raise RuntimeError("Oracle connect_async retornou None")
+        return conn
 
     async def test_connection(self, connection_id: str) -> bool:
         try:
@@ -117,31 +140,36 @@ class OracleAdapter:
                 q = raw_q
             cursor = conn.cursor()
             try:
-                await cursor.execute(q)
+                await _await_if_coro(cursor.execute(q))
             except Exception:
                 if "FETCH FIRST" in q.upper():
                     q = f"SELECT * FROM ({raw_q}) WHERE ROWNUM <= {max_rows}"
-                    await cursor.execute(q)
+                    await _await_if_coro(cursor.execute(q))
                 else:
                     raise
             columns = [d[0] for d in cursor.description] if cursor.description else []
             try:
-                rows = await cursor.fetchmany(max_rows)
+                rows_result = cursor.fetchmany(max_rows)
+                rows = (await _await_if_coro(rows_result)) if asyncio.iscoroutine(rows_result) else (rows_result or [])
             except (AttributeError, TypeError):
                 rows = []
-                count = 0
-                async for r in cursor:
-                    rows.append(r)
-                    count += 1
-                    if count >= max_rows:
-                        break
+                try:
+                    async for r in cursor:
+                        rows.append(r)
+                        if len(rows) >= max_rows:
+                            break
+                except TypeError:
+                    for r in cursor:
+                        rows.append(r)
+                        if len(rows) >= max_rows:
+                            break
             row_list = [list(r) for r in rows]
-            await cursor.close()
+            await _await_if_coro(cursor.close())
             return QueryResult(columns=columns, rows=row_list, row_count=len(row_list))
         except Exception as e:
             raise ValueError(f"Oracle execute_read_only: {e!s}") from e
         finally:
-            await conn.close()
+            await _await_if_coro(conn.close())
 
     async def list_tables(
         self,
@@ -245,7 +273,8 @@ class OracleAdapter:
         schema: str | None = None,
         limit: int = 5,
     ) -> QueryResult:
-        schema = schema or self._params.get(connection_id, {}).get("user", "USER")
+        canonical = self._canonical_id(connection_id)
+        schema = schema or self._params.get(canonical, {}).get("user", "USER")
         conn = await self._connect(connection_id)
         try:
             limit = min(limit, 100)
@@ -485,7 +514,8 @@ class OracleAdapter:
         schema: str | None = None,
         where_clause: str | None = None,
     ) -> int:
-        schema = schema or self._params.get(connection_id, {}).get("user", "USER")
+        canonical = self._canonical_id(connection_id)
+        schema = schema or self._params.get(canonical, {}).get("user", "USER")
         conn = await self._connect(connection_id)
         try:
             cursor = conn.cursor()
@@ -507,7 +537,8 @@ class OracleAdapter:
         info = await self.describe_table(connection_id, table_name, schema=schema)
         if not info:
             return []
-        schema_name = schema or self._params.get(connection_id, {}).get("user", "USER")
+        canonical = self._canonical_id(connection_id)
+        schema_name = schema or self._params.get(canonical, {}).get("user", "USER")
         conn = await self._connect(connection_id)
         result = []
         cols = [c for c in info.columns if column_names is None or c.name in column_names][:20]
