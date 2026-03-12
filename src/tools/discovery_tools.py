@@ -29,7 +29,7 @@ def register_discovery_tools(mcp):
     """Registra tools de descoberta de schema e dados."""
 
     @mcp.tool()
-    async def list_databases(connection_id: str) -> str:
+    async def list_databases(connection_id: str):
         """Lista os databases disponíveis na conexão SQL (PostgreSQL, MySQL, SQL Server)."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -46,7 +46,7 @@ def register_discovery_tools(mcp):
         table_name: str,
         schema: str | None = None,
         limit: int = 5,
-    ) -> str:
+    ):
         """Retorna N linhas de amostra de uma tabela (sem montar SELECT)."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -67,7 +67,7 @@ def register_discovery_tools(mcp):
         connection_id: str,
         schema: str | None = None,
         include_row_count: bool = False,
-    ) -> str:
+    ):
         """Resumo de todas as tabelas do schema (nome, quantidade de colunas e opcionalmente de linhas)."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -83,7 +83,7 @@ def register_discovery_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "get_schema_summary"))
 
     @mcp.tool()
-    async def export_schema_json(connection_id: str, schema: str | None = None) -> str:
+    async def export_schema_json(connection_id: str, schema: str | None = None):
         """Exporta o schema (tabelas e colunas) como JSON para uso no contexto do agente."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -102,7 +102,7 @@ def register_discovery_tools(mcp):
         connection_id: str,
         table_name: str,
         schema: str | None = None,
-    ) -> str:
+    ):
         """Lista índices de uma tabela (nome, colunas, se é único)."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -118,7 +118,7 @@ def register_discovery_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "list_indexes"))
 
     @mcp.tool()
-    async def list_views(connection_id: str, schema: str | None = None) -> str:
+    async def list_views(connection_id: str, schema: str | None = None):
         """Lista views do schema e, quando disponível, a definição."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -137,7 +137,7 @@ def register_discovery_tools(mcp):
         connection_id: str,
         table_name: str,
         schema: str | None = None,
-    ) -> str:
+    ):
         """Lista chaves estrangeiras de uma tabela (tabela/coluna referenciada)."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -153,7 +153,7 @@ def register_discovery_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "get_foreign_keys"))
 
     @mcp.tool()
-    async def get_table_relationships(connection_id: str, schema: str | None = None) -> str:
+    async def get_table_relationships(connection_id: str, schema: str | None = None):
         """Grafo de relacionamentos: tabela A -> tabela B (por FK)."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -173,7 +173,7 @@ def register_discovery_tools(mcp):
         table_name: str,
         schema: str | None = None,
         where_clause: str | None = None,
-    ) -> str:
+    ):
         """Contagem de linhas de uma tabela (opcionalmente com filtro WHERE)."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())
@@ -195,7 +195,7 @@ def register_discovery_tools(mcp):
         table_name: str,
         schema: str | None = None,
         column_names: str | None = None,
-    ) -> str:
+    ):
         """Estatísticas de colunas (min, max, avg, count, nulls, distinct). Colunas numéricas e texto."""
         try:
             adapter = _get_sql_adapter(connection_id.strip())

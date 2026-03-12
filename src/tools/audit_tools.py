@@ -12,7 +12,7 @@ def register_audit_tools(mcp):
     """Registra tools de histórico, capacidades e sugestão de tabelas."""
 
     @mcp.tool()
-    async def query_history(limit: int = 10) -> str:
+    async def query_history(limit: int = 10):
         """Lista as últimas N queries de leitura executadas (connection_id, query, timestamp, row_count)."""
         try:
             entries = history_list_entries(limit=min(limit, 50))
@@ -29,7 +29,7 @@ def register_audit_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "query_history"))
 
     @mcp.tool()
-    async def get_connection_capabilities(connection_id: str) -> str:
+    async def get_connection_capabilities(connection_id: str):
         """Retorna as capacidades suportadas pela conexão (list_tables, describe_table, explain, list_indexes, etc.)."""
         try:
             connections = get_connection_use_case().list_connections()
@@ -61,7 +61,7 @@ def register_audit_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "get_connection_capabilities"))
 
     @mcp.tool()
-    async def suggest_tables(connection_id: str, search_term: str, schema: str | None = None) -> str:
+    async def suggest_tables(connection_id: str, search_term: str, schema: str | None = None):
         """Sugere tabelas/colunas cujo nome contém o termo (ex.: 'vendas', 'email'). Apenas SQL."""
         try:
             adapter = get_adapter(connection_id.strip())

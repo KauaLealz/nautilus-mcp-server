@@ -12,7 +12,7 @@ def register_query_extra_tools(mcp):
     """Registra explain, validate e export CSV/JSON."""
 
     @mcp.tool()
-    async def explain_query_sql(connection_id: str, query: str) -> str:
+    async def explain_query_sql(connection_id: str, query: str):
         """Retorna o plano de execução da query (EXPLAIN) sem executá-la. Ajuda a otimizar e detectar full table scan."""
         try:
             adapter = get_adapter(connection_id.strip())
@@ -29,7 +29,7 @@ def register_query_extra_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "explain_query_sql"))
 
     @mcp.tool()
-    async def validate_query_sql(connection_id: str, query: str) -> str:
+    async def validate_query_sql(connection_id: str, query: str):
         """Valida apenas a sintaxe da query (sem executar). Retorna se é válida ou mensagem de erro."""
         try:
             adapter = get_adapter(connection_id.strip())
@@ -50,7 +50,7 @@ def register_query_extra_tools(mcp):
         connection_id: str,
         query: str,
         max_rows: int | None = None,
-    ) -> str:
+    ):
         """Executa uma query SQL de leitura e retorna o resultado em CSV. max_rows: limite desejado (respeitando o cap do servidor)."""
         try:
             use_case = get_execute_query_use_case()
@@ -66,7 +66,7 @@ def register_query_extra_tools(mcp):
         connection_id: str,
         query: str,
         max_rows: int | None = None,
-    ) -> str:
+    ):
         """Executa uma query SQL de leitura e retorna o resultado como JSON array. max_rows: limite desejado (respeitando o cap)."""
         try:
             use_case = get_execute_query_use_case()

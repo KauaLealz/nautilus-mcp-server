@@ -12,7 +12,7 @@ def register_comparison_tools(mcp):
     """Registra tools para comparar schemas e executar a mesma query em múltiplas conexões."""
 
     @mcp.tool()
-    async def compare_schemas(connection_id_1: str, connection_id_2: str, schema: str | None = None) -> str:
+    async def compare_schemas(connection_id_1: str, connection_id_2: str, schema: str | None = None):
         """Compara os schemas de duas conexões SQL do mesmo tipo (tabelas/colunas). Lista diferenças em texto."""
         try:
             adapter1 = get_adapter(connection_id_1.strip())
@@ -46,7 +46,7 @@ def register_comparison_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "compare_schemas"))
 
     @mcp.tool()
-    async def run_same_query(connection_ids: str, query: str) -> str:
+    async def run_same_query(connection_ids: str, query: str):
         """Executa a mesma query (read-only) em 2+ conexões. connection_ids: separados por vírgula. Retorna resultados lado a lado (contagem por conexão)."""
         try:
             validator = SqlQueryValidator(max_length=get_settings().query_max_length, allow_write=get_settings().allow_write)

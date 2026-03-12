@@ -11,7 +11,7 @@ def register_confirm_write_tools(mcp):
     """Registra tools de write com confirmação (ALLOW_WRITE e NAUTILUS_CONFIRM_WRITE_TOKEN)."""
 
     @mcp.tool()
-    async def request_pending_write(connection_id: str, command: str) -> str:
+    async def request_pending_write(connection_id: str, command: str):
         """Registra um comando de escrita pendente de confirmação. Retorna um pending_id. Use execute_confirmed_write(pending_id, token) para executar com o token configurado (NAUTILUS_CONFIRM_WRITE_TOKEN)."""
         try:
             settings = get_settings()
@@ -25,7 +25,7 @@ def register_confirm_write_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "request_pending_write"))
 
     @mcp.tool()
-    async def execute_confirmed_write(pending_id: str, token: str) -> str:
+    async def execute_confirmed_write(pending_id: str, token: str):
         """Executa um write previamente registrado com request_pending_write, se o token coincidir com NAUTILUS_CONFIRM_WRITE_TOKEN."""
         try:
             settings = get_settings()

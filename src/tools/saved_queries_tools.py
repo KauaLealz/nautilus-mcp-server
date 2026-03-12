@@ -13,7 +13,7 @@ def register_saved_queries_tools(mcp):
     """Registra tools de queries salvas (arquivo saved_queries.json)."""
 
     @mcp.tool()
-    async def list_saved_queries() -> str:
+    async def list_saved_queries():
         """Lista as queries salvas disponíveis (nome, descrição, parâmetros). Configure em saved_queries.json."""
         try:
             queries = list_saved()
@@ -32,7 +32,7 @@ def register_saved_queries_tools(mcp):
         connection_id: str,
         query_name: str,
         params_json: str = "{}",
-    ) -> str:
+    ):
         """Executa uma query salva substituindo placeholders. params_json: ex. {"param1": "valor1"}. Placeholders no template: {{param1}}."""
         try:
             try:

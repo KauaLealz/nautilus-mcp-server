@@ -15,7 +15,7 @@ def register_sql_tools(mcp):
     async def list_tables(
         connection_id: str,
         schema: str | None = None,
-    ) -> str:
+    ):
         """
         Lista as tabelas de um banco SQL (PostgreSQL, MySQL, SQL Server).
         Use esta tool antes de montar queries para conhecer o schema real.
@@ -40,7 +40,7 @@ def register_sql_tools(mcp):
         connection_id: str,
         table_name: str,
         schema: str | None = None,
-    ) -> str:
+    ):
         """
         Descreve as colunas de uma tabela SQL (nome, tipo, nullable).
         Use esta tool para montar queries corretas com os nomes reais das colunas.
@@ -74,7 +74,7 @@ def register_sql_tools(mcp):
         connection_id: str,
         query: str,
         max_rows: int | None = None,
-    ) -> str:
+    ):
         """
         Executa uma query SQL de leitura (SELECT ou WITH ... SELECT).
         Apenas leitura é permitida; queries com INSERT/UPDATE/DELETE/DDL são rejeitadas.

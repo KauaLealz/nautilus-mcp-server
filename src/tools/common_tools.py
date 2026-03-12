@@ -10,7 +10,7 @@ def register_common_tools(mcp):
     """Registra as tools comuns no FastMCP."""
 
     @mcp.tool()
-    async def list_connections() -> str:
+    async def list_connections():
         """
         Lista todas as conexões de banco de dados configuradas no servidor.
         Retorna connection_id, tipo (postgresql, mysql, etc.) e se é somente leitura.
@@ -25,7 +25,7 @@ def register_common_tools(mcp):
             return ErrorHandler.format_for_agent(info)
 
     @mcp.tool()
-    async def test_connection(connection_id: str) -> str:
+    async def test_connection(connection_id: str):
         """
         Testa se uma conexão está acessível.
         Args:

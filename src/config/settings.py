@@ -70,6 +70,13 @@ def _default_port(db_type: str) -> str:
     return ports.get(db_type, "")
 
 
+def _odbc_escape(value: str) -> str:
+    """Escapa valor para uso em connection string ODBC (; e } quebram o parse)."""
+    if not value:
+        return value
+    return value.replace("}", "}}")
+
+
 def _build_url_from_components(
     db_type: str,
     user: str,
@@ -80,6 +87,8 @@ def _build_url_from_components(
 ) -> str:
     """
     Monta URL de conexão com user/password codificados (evita quebra com @, :, /).
+    Use variáveis separadas (user, password, host) no .env quando usuário ou senha
+    tiverem caracteres especiais; a URL será montada com encoding seguro.
     """
     safe_user = quote(user, safe="")
     safe_password = quote(password, safe="")
@@ -111,17 +120,21 @@ def _build_url_from_components(
             return f"redis://:{safe_password}@{host}:{port}/{db_num}"
         return f"redis://{host}:{port}/{db_num}"
     if db_type == "sqlserver":
-        # ODBC: caracteres especiais no PWD podem exigir URL encodada; preferir url quando senha tiver ;
+        # ODBC: UID e PWD com ; ou } quebram o parse; envolvemos em chaves e escapamos }
         driver = "ODBC Driver 17 for SQL Server"
-        return f"odbc://DRIVER={{{driver}}};SERVER={host},{port};DATABASE={database or 'master'};UID={user};PWD={password};TrustServerCertificate=yes"
+        u = _odbc_escape(user)
+        p = _odbc_escape(password)
+        return f"odbc://DRIVER={{{driver}}};SERVER={host},{port};DATABASE={database or 'master'};UID={{{u}}};PWD={{{p}}};TrustServerCertificate=yes"
     return ""
 
 
 def _load_databases_from_env() -> dict[str, DatabaseConfig]:
     """
     Lê variáveis DATABASES__<connection_id>__<key> e monta conexões.
-    Se houver user, password e host (em vez de url), monta a URL com quote() para
-    suportar caracteres especiais (@, :, /) em usuário e senha.
+    Quando houver host (e opcionalmente user, password), a URL é sempre montada
+    a partir dos componentes com quote(), para suportar caracteres especiais
+    (@, :, /, etc.) em usuário e senha. Use url apenas quando não usar host;
+    nesse caso, codifique user/password na URL (percent-encoding).
     """
     prefix = "DATABASES__"
     raw: dict[str, dict[str, str]] = {}
@@ -141,13 +154,15 @@ def _load_databases_from_env() -> dict[str, DatabaseConfig]:
         type_val = data.get("type")
         if not type_val:
             continue
-        url_val = data.get("url")
+        url_val = data.get("url", "").strip()
         user = data.get("user", "").strip()
         password = data.get("password", "").strip()
         host = data.get("host", "").strip()
         port = (data.get("port") or _default_port(type_val)).strip()
         database = (data.get("database") or data.get("db") or "").strip()
-        if not url_val and host:
+        # Preferir sempre montar a URL a partir de componentes quando host existir,
+        # para que user/password com caracteres especiais sejam codificados.
+        if host:
             url_val = _build_url_from_components(type_val, user, password, host, port, database)
         if not url_val:
             continue

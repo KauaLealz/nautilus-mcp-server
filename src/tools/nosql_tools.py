@@ -11,7 +11,7 @@ def register_nosql_tools(mcp):
     """Registra as tools NoSQL no FastMCP."""
 
     @mcp.tool()
-    async def list_collections(connection_id: str, database: str) -> str:
+    async def list_collections(connection_id: str, database: str):
         """
         Lista as coleções de um database MongoDB.
         Args:
@@ -45,7 +45,7 @@ def register_nosql_tools(mcp):
         collection: str,
         filter_json: str = "{}",
         limit: int = 100,
-    ) -> str:
+    ):
         """
         Busca documentos em uma coleção MongoDB com filtro (JSON).
         Apenas leitura; limite máximo de 500 documentos.
@@ -85,7 +85,7 @@ def register_nosql_tools(mcp):
             return ErrorHandler.format_for_agent(info)
 
     @mcp.tool()
-    async def redis_get(connection_id: str, key: str) -> str:
+    async def redis_get(connection_id: str, key: str):
         """
         Obtém o valor de uma chave Redis (leitura).
         Args:
@@ -113,7 +113,7 @@ def register_nosql_tools(mcp):
             return ErrorHandler.format_for_agent(info)
 
     @mcp.tool()
-    async def redis_keys(connection_id: str, pattern: str = "*") -> str:
+    async def redis_keys(connection_id: str, pattern: str = "*"):
         """
         Lista chaves Redis que batem com o pattern (ex: "user:*").
         Limite de 200 chaves para evitar sobrecarga.
@@ -149,7 +149,7 @@ def register_nosql_tools(mcp):
         collection: str,
         pipeline_json: str,
         limit: int = 500,
-    ) -> str:
+    ):
         """
         Executa pipeline de agregação MongoDB (read-only). Stages permitidos: $match, $project, $group, $sort, $limit, $skip, $unwind, $lookup, $count, $addFields. Proibidos: $out, $merge.
         Args:
@@ -175,7 +175,7 @@ def register_nosql_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "mongodb_aggregate"))
 
     @mcp.tool()
-    async def redis_key_type(connection_id: str, key: str) -> str:
+    async def redis_key_type(connection_id: str, key: str):
         """Retorna o tipo da chave Redis (string, list, set, hash, zset, etc.)."""
         try:
             adapter = get_adapter(connection_id.strip())
@@ -187,7 +187,7 @@ def register_nosql_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "redis_key_type"))
 
     @mcp.tool()
-    async def redis_key_ttl(connection_id: str, key: str) -> str:
+    async def redis_key_ttl(connection_id: str, key: str):
         """Retorna o TTL da chave Redis em segundos (-1 = sem expiração, -2 = não existe)."""
         try:
             adapter = get_adapter(connection_id.strip())
@@ -203,7 +203,7 @@ def register_nosql_tools(mcp):
             return ErrorHandler.format_for_agent(ErrorHandler.handle(e, "redis_key_ttl"))
 
     @mcp.tool()
-    async def redis_mget(connection_id: str, keys: str) -> str:
+    async def redis_mget(connection_id: str, keys: str):
         """Retorna os valores de várias chaves Redis de uma vez. keys: lista separada por vírgula (máx. 50)."""
         try:
             adapter = get_adapter(connection_id.strip())
