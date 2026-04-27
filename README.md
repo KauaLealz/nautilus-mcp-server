@@ -1,174 +1,139 @@
 # Nautilus MCP Server
 
-**\[BETA]** — Servidor MCP (Model Context Protocol) para **acesso seguro** a bancos de dados SQL e NoSQL. Pensado para uso por agentes de IA com proteções contra execução indevida e alucinações (queries destrutivas ou inválidas).
+## O que é
 
-## Bancos suportados
+É um servidor [Model Context Protocol (MCP)](https://modelcontextprotocol.io) que fala com o assistente pela entrada/saída padrão (**stdio**). Está publicado no npm como **`nautilus-mcp-server`** e precisa de **Node.js 18 ou superior**. Recomenda-se executar com **`npx -y nautilus-mcp-server@latest`** para o `npx` resolver sempre o dist-tag **latest** (evita reutilizar cache de instalação antiga). Se precisar travar em uma versão exata, use `nautilus-mcp-server@<versão>` no lugar de `@latest`.
 
-| Tipo  | Bancos        |
-|-------|----------------|
-| **SQL**   | PostgreSQL, MySQL, SQL Server, Oracle |
-| **NoSQL** | MongoDB, Redis               |
+## O que faz
 
-## Arquitetura
+- **Bancos SQL** (PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle): listar tabelas, ver colunas e índices, executar apenas consultas de leitura (`SELECT` / `WITH`) com validação de segurança e limite de linhas, e pequenas amostras de dados.
+- **MongoDB**: listar coleções, buscar documentos com filtro em JSON e paginação, ver índices da coleção, amostra rápida.
+- **Redis**: listar chaves (com padrão e cursor), ler valores conforme o tipo da chave (string, hash, lista, set, sorted set), amostra rápida.
 
-- **Tools** (`src/tools/`): pontos de entrada MCP (common, sql, nosql).
-- **Use cases** (`src/use_cases/`): orquestração e regras de negócio.
-- **Domain** (`src/domain/`): ports (interfaces), modelos e validação de segurança (SQL).
-- **Adapters** (`src/adapters/sql/`, `src/adapters/nosql/`): uma implementação por banco.
-- **Bootstrap** (`src/bootstrap.py`): monta adapters e use cases por configuração.
+Em muitas respostas o cliente recebe também **`structuredContent`** (JSON estruturado) além do texto, para quem consome colunas, linhas, documentos ou chaves sem depender só de texto formatado.
 
-## Instalação
+Comportamento padrão: **somente leitura** no SQL; limites globais de tamanho de query, timeout e número de linhas/registros podem ser ajustados por variáveis de ambiente (veja abaixo).
 
-```bash
-cd nautilus-mcp-server
-pip install -r requirements.txt
-```
+## Tools
 
-## Configuração
+| Tool | Função |
+|------|--------|
+| **`db_list_connections`** | Lista os `connection_id` configurados, tipo de engine e `read_only`. Use antes das demais tools para escolher o id correto. |
+| **`db_list_resources`** | SQL: tabelas. MongoDB: coleções (parâmetro `database` obrigatório). Redis: chaves (`key_pattern` e `cursor` opcionais). |
+| **`db_get_metadata`** | SQL: metadados/colunas da tabela. MongoDB: amostra de documentos. Redis: tipo e amostra do valor da chave. |
+| **`db_describe_indexes`** | Índices de uma tabela SQL ou de uma coleção MongoDB. |
+| **`db_query_sql`** | Executa `SELECT`/`WITH` em conexões SQL. `output_format`: `table`, `json` ou `csv`; `limit` opcional (respeitando o teto global). |
+| **`db_fetch_documents`** | MongoDB: `find` com `filter_json`, `limit` e `skip`. |
+| **`db_read_cache`** | Redis: leitura conforme o tipo da chave. |
+| **`db_peek_sample`** | Até três registros: linhas (SQL), documentos (MongoDB) ou amostra (Redis). |
 
-1. Copie o arquivo de exemplo e edite com suas conexões:
+## Resources (MCP)
 
-```powershell
-copy .env.example .env
-```
+| URI | Conteúdo |
+|-----|----------|
+| **`nautilus://connections`** | JSON com `{ "connections": [...] }` (mesmos campos que `db_list_connections`: `connection_id`, `type`, `read_only`). |
 
-2. No `.env`, defina as conexões com o padrão:
+## Como configurar as conexões
 
-- `DATABASES__<connection_id>__type`: tipo do banco (`postgresql`, `mysql`, `sqlserver`, `oracle`, `mongodb`, `redis`).
-- `DATABASES__<connection_id>__url`: URL de conexão (sem expor em logs).
-- **read_only é padrão (somente leitura)**; informe `DATABASES__<id>__read_only=false` apenas se quiser desabilitar.
+Cada conexão tem um **identificador** (`connection_id`): letras, números e underscores (ex.: `pg_prod`, `mongo_app`).
 
-Exemplo para uma conexão PostgreSQL:
+Todas as variáveis seguem o padrão:
+
+`DATABASES__<connection_id>__<atributo>`
+
+### Obrigatório por conexão
+
+- **`type`**: um entre `postgresql`, `mysql`, `mariadb` (tratado como MySQL), `sqlite`, `sqlserver`, `oracle`, `mongodb`, `redis`.
+- **Conexão**, em um dos dois formatos:
+  - **`url`**: URL completa de conexão (ex.: `postgresql://user:senha@host:5432/banco`, `mongodb://host:27017/`, `redis://host:6379/0`, arquivo/path para SQLite conforme documentação do driver).
+  - **Ou campos separados** (útil se a senha tem `@`, `:`, `/`, etc.), sempre no formato `DATABASES__<connection_id>__…`: **`host`**, **`port`**, **`user`**, **`password`**, **`database`** ou **`db`**. Exemplo com id `pg`: `DATABASES__pg__host`, **`DATABASES__pg__port`** (ex.: `5432`), `DATABASES__pg__user`, `DATABASES__pg__password`, `DATABASES__pg__database`. Em vez de `port` separado, a porta pode ir junto em `host` (ex.: `db.exemplo.com:3306`). Se **`port`** for omitida e não estiver no `host`, usam-se portas padrão por tipo (PostgreSQL 5432, MySQL 3306, SQL Server 1433, Oracle 1521, MongoDB 27017, Redis 6379).
+
+### Opcional por conexão
+
+- **`read_only`**: padrão é somente leitura.
+
+### Limites e opções globais (opcional)
+
+| Variável | Efeito (padrão se omitida) |
+|----------|----------------------------|
+| `NAUTILUS_QUERY_MAX_LENGTH` | Tamanho máximo da query SQL em caracteres (2000). |
+| `NAUTILUS_MAX_ROW_LIMIT` ou `NAUTILUS_MAX_ROWS` | Teto de linhas/registros e validação de `LIMIT` (200). |
+| `NAUTILUS_DEFAULT_ROW_LIMIT` | Limite padrão quando a tool não fixa outro (50, até o máximo). |
+| `NAUTILUS_QUERY_TIMEOUT_MS` | Timeout das operações em milissegundos (5000 se não usar a de segundos). |
+| `NAUTILUS_QUERY_TIMEOUT_SECONDS` | Alternativa ao timeout em ms (só usada se `NAUTILUS_QUERY_TIMEOUT_MS` não estiver definida). |
+| `NAUTILUS_READ_ONLY_MODE` | Modo somente leitura (`true` por padrão). |
+
+### Exemplos (`.env` ou `env` do MCP)
+
+PostgreSQL por URL:
 
 ```env
-DATABASES__pg_main__type=postgresql
-DATABASES__pg_main__url=postgresql://user:password@localhost:5432/mydb
+DATABASES__pg__type=postgresql
+DATABASES__pg__url=postgresql://user:password@localhost:5432/mydb
 ```
 
-**Usuário ou senha com caracteres especiais (@, :, /):**  
-Se usar `url`, codifique na URL (ex.: `@` → `%40`, `:` → `%3A`). Ou use variáveis separadas para que a URL seja montada automaticamente com encoding correto:
+PostgreSQL com host e senha com caracteres especiais:
 
 ```env
-DATABASES__pg_main__type=postgresql
-DATABASES__pg_main__host=localhost
-DATABASES__pg_main__port=5432
-DATABASES__pg_main__user=meu_usuario
-DATABASES__pg_main__password=senha@com:especiais
-DATABASES__pg_main__database=mydb
+DATABASES__pg__type=postgresql
+DATABASES__pg__host=localhost
+DATABASES__pg__port=5432
+DATABASES__pg__user=myuser
+DATABASES__pg__password=pa@ss:word/with
+DATABASES__pg__database=mydb
 ```
 
-3. (Opcional) Limites de segurança: **timeout** vale para todas as consultas (evita travar a base); **max_rows** é o teto de linhas. O agente pode pedir menos linhas via parâmetro `max_rows` nas tools; se a query tiver `LIMIT`/`TOP`/`FETCH FIRST` acima do cap, é barrada na validação (dry).
+MySQL com host e porta no mesmo campo:
 
 ```env
-NAUTILUS_QUERY_MAX_LENGTH=2000
-NAUTILUS_QUERY_TIMEOUT_SECONDS=30
-NAUTILUS_MAX_ROWS=500
-NAUTILUS_ALLOW_WRITE=false
-NAUTILUS_CONFIRM_WRITE_TOKEN=   # Opcional; usado por execute_confirmed_write
-```
-Para queries salvas, crie `saved_queries.json` na raiz (ou defina `NAUTILUS_SAVED_QUERIES_JSON`). Veja `saved_queries.json.example`.
-
-## Execução
-
-```bash
-python server.py
+DATABASES__app__type=mysql
+DATABASES__app__host=db.exemplo.com:3306
+DATABASES__app__user=app
+DATABASES__app__password=secret
+DATABASES__app__database=appdb
 ```
 
-O servidor usa transporte stdio para integração com Cursor/IDE (MCP).
+## Como usar nos clientes
 
-## Teste com todos os bancos (Docker)
+Em qualquer cliente MCP com transporte **stdio**, configure:
 
-Para subir PostgreSQL, MySQL, SQL Server, Oracle, MongoDB e Redis em containers e configurar o MCP no Cursor para conectar em todos:
+- **Comando**: `npx` (no Windows, se necessário, use o caminho completo de `npx.cmd`).
+- **Argumentos**: use `["-y", "nautilus-mcp-server@latest"]`. Opcionalmente fixe versão com `["-y", "nautilus-mcp-server@<versão>"]`.
+- **Variáveis de ambiente**: todas as `DATABASES__…` e, se quiser, as `NAUTILUS__…`.
 
-1. Suba os containers: `docker compose up -d`
-2. Configure o MCP: use `.env.docker` (copie para `.env`) e/ou `.cursor/mcp.json.example` (copie para `.cursor/mcp.json`).
+Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
 
-Detalhes, credenciais e passos no Cursor em **[docs/DOCKER_TEST.md](docs/DOCKER_TEST.md)**.
+```json
+{
+  "mcpServers": {
+    "nautilus": {
+      "command": "npx",
+      "args": ["-y", "nautilus-mcp-server@latest"],
+      "env": {
+        "DATABASES__pg__type": "postgresql",
+        "DATABASES__pg__host": "localhost",
+        "DATABASES__pg__port": "5432",
+        "DATABASES__pg__user": "app",
+        "DATABASES__pg__password": "secret",
+        "DATABASES__pg__database": "appdb"
+      }
+    }
+  }
+}
+```
 
-## Tools disponíveis
+### Cursor
 
-### Comuns
+**Configurações → MCP** (ou JSON de MCP do projeto): adicione o servidor com `command`, `args` e `env` como acima.
 
-- **list_connections**: Lista todas as conexões configuradas (connection_id, tipo, somente leitura).
-- **test_connection**: Testa se uma conexão está acessível.
+### Claude Desktop
 
-### SQL
+Use o mesmo esquema de `command`, `args` e `env` no arquivo de configuração MCP do aplicativo. Caminho e formato exato variam por sistema; veja a [documentação da Anthropic sobre MCP](https://docs.anthropic.com/en/docs/agents-and-tools/mcp).
 
-- **list_tables**: Lista tabelas de um banco SQL (connection_id, schema opcional).
-- **describe_table**: Descreve colunas de uma tabela (nome, tipo, nullable).
-- **execute_query_sql**: Executa uma query de leitura (SELECT ou WITH ... SELECT). Só leitura por padrão; INSERT/UPDATE/DELETE/DDL são rejeitados.
+### Claude Code e outras IDEs
 
-### NoSQL
+Mesma ideia: processo `npx` (ou Node apontando para o pacote instalado), argumentos `-y` e `nautilus-mcp-server@latest`, e o mesmo bloco de variáveis de ambiente.
 
-- **list_collections**: Lista coleções de um database MongoDB.
-- **find_documents**: Busca documentos em uma coleção MongoDB (filtro JSON, limite).
-- **mongodb_aggregate**: Pipeline de agregação read-only ($match, $group, $sort, $limit, etc.; $out/$merge proibidos).
-- **redis_get**: Obtém o valor de uma chave Redis.
-- **redis_keys**: Lista chaves Redis por pattern (ex.: `user:*`), com limite de chaves.
-- **redis_key_type**: Retorna o tipo da chave (string, list, hash, etc.).
-- **redis_key_ttl**: Retorna o TTL da chave em segundos.
-- **redis_mget**: Retorna valores de várias chaves de uma vez (máx. 50).
+### Problemas comuns no Windows com `npx`
 
-### Descoberta e schema
-
-- **list_databases**: Lista databases disponíveis na conexão SQL.
-- **get_table_sample**: Retorna N linhas de amostra de uma tabela (sem montar SELECT).
-- **get_schema_summary**: Resumo de todas as tabelas do schema (colunas e opcionalmente row count).
-- **export_schema_json**: Exporta schema (tabelas + colunas) como JSON.
-- **list_indexes**: Lista índices de uma tabela.
-- **list_views**: Lista views e definição (quando disponível).
-- **get_foreign_keys**: Chaves estrangeiras de uma tabela.
-- **get_table_relationships**: Grafo tabela A → tabela B (por FK).
-- **get_row_count**: Contagem de linhas (com WHERE opcional).
-- **get_column_stats**: Estatísticas de colunas (min, max, avg, count, nulls, distinct).
-
-### Query e export
-
-- **explain_query_sql**: Plano de execução (EXPLAIN) sem executar a query.
-- **validate_query_sql**: Valida só a sintaxe da query.
-- **execute_query_sql_as_csv**: Executa query e retorna resultado em CSV.
-- **execute_query_sql_as_json**: Executa query e retorna resultado como JSON.
-
-### Auditoria e ajuda
-
-- **query_history**: Últimas N queries executadas (connection_id, query, timestamp, row_count).
-- **get_connection_capabilities**: Lista as capacidades suportadas pela conexão.
-- **suggest_tables**: Sugere tabelas/colunas cujo nome contém um termo.
-
-### Comparação
-
-- **compare_schemas**: Compara schemas de duas conexões SQL (diferenças em tabelas/colunas).
-- **run_same_query**: Executa a mesma query em 2+ conexões e retorna resultados lado a lado.
-
-### Queries salvas
-
-- **list_saved_queries**: Lista queries salvas (arquivo `saved_queries.json`).
-- **execute_saved_query**: Executa uma query salva com parâmetros (placeholders `{{param}}`). Configure `NAUTILUS_SAVED_QUERIES_JSON` ou use `saved_queries.json` na raiz.
-
-### Write com confirmação (human-in-the-loop)
-
-- **request_pending_write**: Registra um comando de escrita pendente; retorna `pending_id`.
-- **execute_confirmed_write**: Executa o write pendente se o `token` coincidir com `NAUTILUS_CONFIRM_WRITE_TOKEN`. Requer `NAUTILUS_ALLOW_WRITE=true`.
-
-## Segurança e proteção contra alucinações
-
-- **Read-only por padrão**: Conexões e validação em código permitem apenas leitura, a menos que `NAUTILUS_ALLOW_WRITE=true` (e opt-in explícito no fluxo).
-- **Validação de query SQL**: Allowlist (SELECT, WITH); blocklist de palavras-chave (DROP, ALTER, TRUNCATE, etc.); limite de tamanho, timeout e de linhas retornadas.
-- **Introspectação de schema**: Use `list_tables` e `describe_table` antes de montar queries para usar o schema real e reduzir erros e “invenção” de nomes.
-- **Identificação por connection_id**: O agente só escolhe entre conexões já configuradas; não há acesso a credenciais ou connection strings.
-- **Respostas padronizadas**: Erros retornam mensagens genéricas ao agente; detalhes técnicos podem ser logados apenas no servidor.
-
-## Como adicionar um novo banco
-
-1. Crie um adapter em `src/adapters/sql/` ou `src/adapters/nosql/` que implemente pelo menos `list_connections`, `get_connection_info` e `test_connection`.
-2. Para SQL: implemente também `execute_read_only`, `list_tables` e `describe_table`.
-3. Registre o adapter em `src/bootstrap.py` (filtro por `config.type`) e adicione ao `connection_to_adapter`.
-4. Se for NoSQL com operações específicas, adicione tools em `src/tools/nosql_tools.py` e use `get_adapter(connection_id)`.
-
-## Ideias de novas funcionalidades
-
-Há um documento com sugestões de ferramentas e comportamentos úteis (descoberta de schema, EXPLAIN, perfilamento, export CSV/JSON, NoSQL, auditoria, etc.): [docs/IDEAS_FUNCIONALIDADES.md](docs/IDEAS_FUNCIONALIDADES.md).
-
-## Licença
-
-Projeto de referência para uso com MCP/Cursor.
+Se aparecer **`EPERM`**, **`TAR_ENTRY_ERROR`** ou **`MODULE_NOT_FOUND`** (por exemplo em dependências sob o cache do npm), feche o cliente MCP, apague a pasta **`%LocalAppData%\npm-cache\_npx`** e tente de novo. Outra opção estável é instalar o pacote globalmente (`npm install -g nautilus-mcp-server`) e configurar o MCP para executar o **`node`** com o caminho do `cli.js` dessa instalação global, em vez de `npx`.

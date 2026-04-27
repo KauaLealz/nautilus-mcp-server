@@ -1,0 +1,60 @@
+{
+  "name": "nautilus-mcp-server",
+  "version": "2.2.0",
+  "description": "Servidor MCP (stdio) para PostgreSQL, MySQL, MongoDB e Redis com SQL somente leitura (SELECT/WITH).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "nautilus-mcp-server": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepublishOnly": "npm run build",
+    "release": "node scripts/bump-version.mjs && npm publish --access=public",
+    "release:minor": "node scripts/bump-version.mjs minor && npm publish --access=public",
+    "release:major": "node scripts/bump-version.mjs major && npm publish --access=public",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "postgresql",
+    "mysql",
+    "mongodb",
+    "redis",
+    "cursor",
+    "claude"
+  ],
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "dotenv": "^17.4.1",
+    "mongodb": "^6.21.0",
+    "mssql": "^12.2.1",
+    "mysql2": "^3.22.0",
+    "oracledb": "^6.10.0",
+    "pg": "^8.20.0",
+    "redis": "^5.11.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "esbuild": "^0.27.2",
+    "zod": "4.3.6",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.0.8"
+  }
+}
