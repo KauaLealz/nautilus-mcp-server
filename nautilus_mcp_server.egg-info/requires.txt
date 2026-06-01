@@ -1,0 +1,8 @@
+mcp>=1.27.2
+oracledb>=4.0.1
+psycopg[binary]>=3.3.4
+pymongo>=4.17.0
+pymssql>=2.3.13
+pymysql>=1.2.0
+python-dotenv>=1.2.2
+redis>=8.0.0

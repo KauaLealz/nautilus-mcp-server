@@ -1,0 +1,13 @@
+README.md
+adapters.py
+config.py
+formatter.py
+pyproject.toml
+server.py
+validator.py
+nautilus_mcp_server.egg-info/PKG-INFO
+nautilus_mcp_server.egg-info/SOURCES.txt
+nautilus_mcp_server.egg-info/dependency_links.txt
+nautilus_mcp_server.egg-info/entry_points.txt
+nautilus_mcp_server.egg-info/requires.txt
+nautilus_mcp_server.egg-info/top_level.txt
