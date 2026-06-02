@@ -8,7 +8,10 @@ import redis
 import time
 import re
 import os
+import logging
 from urllib.parse import urlparse, unquote
+
+logger = logging.getLogger("nautilus")
 
 def q_id(s: str) -> str:
     return f'"{str(s).replace(chr(34), chr(34) + chr(34))}"'
@@ -244,13 +247,33 @@ class PostgresAdapter:
         self.conns = {}
 
     def get_conn(self, connection_id: str):
-        if connection_id not in self.conns:
+        conn = self.conns.get(connection_id)
+        if conn is not None:
+            is_alive = True
+            if conn.closed or getattr(conn, "broken", False):
+                is_alive = False
+            else:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                except Exception:
+                    is_alive = False
+            if not is_alive:
+                logger.info(f"Conexao Postgres {connection_id} inativa ou fechada. Removendo do cache.")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                self.conns.pop(connection_id, None)
+                conn = None
+        if conn is None:
             cfg = self.configs.get(connection_id)
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
-            conn = psycopg.connect(cfg["url"])
+            logger.info(f"Criando nova conexao Postgres para {connection_id}")
+            conn = psycopg.connect(cfg["url"], autocommit=True, connect_timeout=5)
             self.conns[connection_id] = conn
-        return self.conns[connection_id]
+        return conn
 
     def test_connection(self, connection_id: str) -> bool:
         try:
@@ -275,19 +298,24 @@ class PostgresAdapter:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
     def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
-        conn = self.get_conn(connection_id)
         q = query.strip().rstrip(";")
         if not re.search(r"\bLIMIT\s+\d+", q, re.IGNORECASE):
             q = f"{q} LIMIT {max_rows}"
-        with conn.cursor() as cur:
-            cur.execute(f"SET statement_timeout = {timeout_seconds * 1000}")
-            cur.execute(q)
-            if cur.description is None:
-                return {"columns": [], "rows": [], "row_count": 0}
-            columns = [d.name for d in cur.description]
-            rows = cur.fetchall()
-            out_rows = [list(row) for row in rows]
-            return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        try:
+            conn = self.get_conn(connection_id)
+            with conn.cursor() as cur:
+                cur.execute(f"SET statement_timeout = {timeout_seconds * 1000}")
+                cur.execute(q)
+                if cur.description is None:
+                    return {"columns": [], "rows": [], "row_count": 0}
+                columns = [d.name for d in cur.description]
+                rows = cur.fetchall()
+                out_rows = [list(row) for row in rows]
+                return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        except (psycopg.OperationalError, psycopg.InterfaceError) as e:
+            logger.warning(f"Erro de conexao Postgres durante query para {connection_id}: {e}")
+            self.conns.pop(connection_id, None)
+            raise
 
     def list_tables(self, connection_id: str, schema: str = None) -> list:
         conn = self.get_conn(connection_id)
@@ -568,17 +596,26 @@ class MysqlAdapter:
         self.conns = {}
 
     def get_conn(self, connection_id: str):
-        if connection_id not in self.conns:
+        conn = self.conns.get(connection_id)
+        if conn is not None:
+            try:
+                conn.ping(reconnect=True)
+            except Exception as e:
+                logger.warning(f"Erro no ping da conexao MySQL {connection_id}: {e}")
+                self.conns.pop(connection_id, None)
+                conn = None
+        if conn is None:
             cfg = self.configs.get(connection_id)
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
+            logger.info(f"Criando nova conexao MySQL para {connection_id}")
             host, port, user, password, db = parse_sql_url(cfg["url"])
             conn = pymysql.connect(
                 host=host, port=port or 3306, user=user, password=password, database=db,
-                autocommit=True
+                autocommit=True, connect_timeout=5
             )
             self.conns[connection_id] = conn
-        return self.conns[connection_id]
+        return conn
 
     def test_connection(self, connection_id: str) -> bool:
         try:
@@ -603,18 +640,23 @@ class MysqlAdapter:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
     def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
-        conn = self.get_conn(connection_id)
         q = query.strip().rstrip(";")
         if not re.search(r"\bLIMIT\s+\d+", q, re.IGNORECASE):
             q = f"{q} LIMIT {max_rows}"
-        with conn.cursor() as cur:
-            cur.execute(q)
-            if cur.description is None:
-                return {"columns": [], "rows": [], "row_count": 0}
-            columns = [d[0] for d in cur.description]
-            rows = cur.fetchall()
-            out_rows = [list(row) for row in rows]
-            return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        try:
+            conn = self.get_conn(connection_id)
+            with conn.cursor() as cur:
+                cur.execute(q)
+                if cur.description is None:
+                    return {"columns": [], "rows": [], "row_count": 0}
+                columns = [d[0] for d in cur.description]
+                rows = cur.fetchall()
+                out_rows = [list(row) for row in rows]
+                return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        except (pymysql.err.OperationalError, pymysql.err.InterfaceError) as e:
+            logger.warning(f"Erro de conexao MySQL durante query para {connection_id}: {e}")
+            self.conns.pop(connection_id, None)
+            raise
 
     def list_tables(self, connection_id: str, schema: str = None) -> list:
         conn = self.get_conn(connection_id)
@@ -890,7 +932,24 @@ class MssqlAdapter:
         self.conns = {}
 
     def get_conn(self, connection_id: str):
-        if connection_id not in self.conns:
+        conn = self.conns.get(connection_id)
+        if conn is not None:
+            is_alive = True
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+            except Exception:
+                is_alive = False
+            if not is_alive:
+                logger.info(f"Conexao MSSQL {connection_id} inativa. Removendo do cache.")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                self.conns.pop(connection_id, None)
+                conn = None
+        if conn is None:
             cfg = self.configs.get(connection_id)
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
@@ -913,13 +972,15 @@ class MssqlAdapter:
                         params["user"] = v.strip()
                     elif k_lower == "password" or k_lower == "pwd":
                         params["password"] = v.strip()
+            logger.info(f"Criando nova conexao MSSQL para {connection_id}")
             conn = pymssql.connect(
                 server=params.get("host"), port=params.get("port", 1433),
                 user=params.get("user"), password=params.get("password"),
-                database=params.get("database"), autocommit=True
+                database=params.get("database"), autocommit=True,
+                login_timeout=5
             )
             self.conns[connection_id] = conn
-        return self.conns[connection_id]
+        return conn
 
     def test_connection(self, connection_id: str) -> bool:
         try:
@@ -944,19 +1005,24 @@ class MssqlAdapter:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
     def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
-        conn = self.get_conn(connection_id)
         q = query.strip().rstrip(";")
         if not re.search(r"\bTOP\s+\d+", q, re.IGNORECASE) and not re.search(r"\bOFFSET\s+\d+", q, re.IGNORECASE):
             if q.lower().startswith("select"):
                 q = f"SELECT TOP {max_rows} " + q[6:]
-        with conn.cursor() as cur:
-            cur.execute(q)
-            if cur.description is None:
-                return {"columns": [], "rows": [], "row_count": 0}
-            columns = [d[0] for d in cur.description]
-            rows = cur.fetchall()
-            out_rows = [list(row) for row in rows]
-            return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        try:
+            conn = self.get_conn(connection_id)
+            with conn.cursor() as cur:
+                cur.execute(q)
+                if cur.description is None:
+                    return {"columns": [], "rows": [], "row_count": 0}
+                columns = [d[0] for d in cur.description]
+                rows = cur.fetchall()
+                out_rows = [list(row) for row in rows]
+                return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        except (pymssql.OperationalError, pymssql.InterfaceError) as e:
+            logger.warning(f"Erro de conexao MSSQL durante query para {connection_id}: {e}")
+            self.conns.pop(connection_id, None)
+            raise
 
     def list_tables(self, connection_id: str, schema: str = None) -> list:
         conn = self.get_conn(connection_id)
@@ -1247,7 +1313,22 @@ class OracleAdapter:
         self.conns = {}
 
     def get_conn(self, connection_id: str):
-        if connection_id not in self.conns:
+        conn = self.conns.get(connection_id)
+        if conn is not None:
+            is_alive = True
+            try:
+                conn.ping()
+            except Exception:
+                is_alive = False
+            if not is_alive:
+                logger.info(f"Conexao Oracle {connection_id} inativa. Removendo do cache.")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                self.conns.pop(connection_id, None)
+                conn = None
+        if conn is None:
             cfg = self.configs.get(connection_id)
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
@@ -1256,9 +1337,10 @@ class OracleAdapter:
             user = unquote(parsed.username) if parsed.username else None
             password = unquote(parsed.password) if parsed.password else None
             dsn = f"{parsed.hostname}:{parsed.port or 1521}/{parsed.path.lstrip('/')}"
+            logger.info(f"Criando nova conexao Oracle para {connection_id}")
             conn = oracledb.connect(user=user, password=password, dsn=dsn)
             self.conns[connection_id] = conn
-        return self.conns[connection_id]
+        return conn
 
     def test_connection(self, connection_id: str) -> bool:
         try:
@@ -1283,18 +1365,23 @@ class OracleAdapter:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
     def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
-        conn = self.get_conn(connection_id)
         q = query.strip().rstrip(";")
         if not re.search(r"\bFETCH\s+FIRST\s+\d+", q, re.IGNORECASE) and not re.search(r"\bROWNUM\b", q, re.IGNORECASE):
             q = f"SELECT * FROM ({q}) WHERE ROWNUM <= {max_rows}"
-        with conn.cursor() as cur:
-            cur.execute(q)
-            if cur.description is None:
-                return {"columns": [], "rows": [], "row_count": 0}
-            columns = [d[0] for d in cur.description]
-            rows = cur.fetchall()
-            out_rows = [list(row) for row in rows]
-            return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        try:
+            conn = self.get_conn(connection_id)
+            with conn.cursor() as cur:
+                cur.execute(q)
+                if cur.description is None:
+                    return {"columns": [], "rows": [], "row_count": 0}
+                columns = [d[0] for d in cur.description]
+                rows = cur.fetchall()
+                out_rows = [list(row) for row in rows]
+                return {"columns": columns, "rows": out_rows, "row_count": len(out_rows)}
+        except (oracledb.DatabaseError, oracledb.InterfaceError, oracledb.OperationalError) as e:
+            logger.warning(f"Erro de conexao Oracle durante query para {connection_id}: {e}")
+            self.conns.pop(connection_id, None)
+            raise
 
     def list_tables(self, connection_id: str, schema: str = None) -> list:
         conn = self.get_conn(connection_id)
@@ -1403,15 +1490,28 @@ class MongodbAdapter:
         self.clients = {}
 
     def get_client(self, connection_id: str):
-        if connection_id not in self.clients:
+        client = self.clients.get(connection_id)
+        if client is not None:
+            try:
+                client.admin.command("ping")
+            except Exception:
+                logger.info(f"Conexao MongoDB {connection_id} inativa. Removendo do cache.")
+                try:
+                    client.close()
+                except Exception:
+                    pass
+                self.clients.pop(connection_id, None)
+                client = None
+        if client is None:
             cfg = self.configs.get(connection_id)
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
+            logger.info(f"Criando nova conexao MongoDB para {connection_id}")
             client = pymongo.MongoClient(
                 cfg["url"], serverSelectionTimeoutMS=self.timeout_ms, connectTimeoutMS=self.timeout_ms
             )
             self.clients[connection_id] = client
-        return self.clients[connection_id]
+        return client
 
     def test_connection(self, connection_id: str) -> bool:
         try:
@@ -1505,13 +1605,22 @@ class RedisAdapter:
         self.clients = {}
 
     def get_client(self, connection_id: str):
-        if connection_id not in self.clients:
+        client = self.clients.get(connection_id)
+        if client is not None:
+            try:
+                client.ping()
+            except Exception:
+                logger.info(f"Conexao Redis {connection_id} inativa. Removendo do cache.")
+                self.clients.pop(connection_id, None)
+                client = None
+        if client is None:
             cfg = self.configs.get(connection_id)
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
+            logger.info(f"Criando nova conexao Redis para {connection_id}")
             client = redis.from_url(cfg["url"], socket_connect_timeout=self.timeout_ms / 1000.0)
             self.clients[connection_id] = client
-        return self.clients[connection_id]
+        return client
 
     def test_connection(self, connection_id: str) -> bool:
         try:

@@ -4,6 +4,8 @@ from typing import Optional, List, Dict, Any
 import json
 import time
 import os
+import sys
+import logging
 from bson import ObjectId
 from datetime import datetime
 from decimal import Decimal
@@ -15,6 +17,13 @@ from adapters import (
     SqliteAdapter, PostgresAdapter, MysqlAdapter, MssqlAdapter, OracleAdapter,
     MongodbAdapter, RedisAdapter
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stderr
+)
+logger = logging.getLogger("nautilus")
 
 
 mcp = FastMCP(
@@ -98,10 +107,13 @@ def deep_sanitize(value):
 
 @mcp.tool(name="db_list_connections")
 def db_list_connections() -> str:
+    logger.info("Listando conexões de banco de dados disponíveis.")
     connections = [{"connection_id": cid, "type": cfg["type"], "read_only": cfg["read_only"]} for cid, cfg in databases.items()]
     if not connections:
+        logger.warning("Nenhuma conexão configurada encontrada.")
         return "Nenhuma conexao configurada. Defina variaveis DATABASES__<connection_id>__*."
     lines = [f"- {c['connection_id']}: engine {c['type']}{' (read_only)' if c['read_only'] else ''}" for c in connections]
+    logger.info(f"Retornando {len(connections)} conexões configuradas.")
     return f"Conexoes disponiveis ({len(connections)}):\n" + "\n".join(lines)
 
 @mcp.tool(name="db_list_resources")
@@ -112,21 +124,27 @@ def db_list_resources(
     key_pattern: Optional[str] = None,
     cursor: Optional[str] = None
 ) -> str:
+    logger.info(f"Listando recursos para connection_id: {connection_id}, schema: {schema}, database: {database}")
     cid = resolve_connection_id(connection_id)
     adapter, engine = get_db_adapter(cid)
     
     if engine in {"sqlite", "postgresql", "mysql", "sqlserver", "oracle"}:
         tables = adapter.list_tables(cid, schema)
         if not tables:
+            logger.info(f"Nenhuma tabela encontrada no schema '{schema or 'default'}' para {cid}")
             return f"Nenhuma tabela encontrada no schema '{schema or 'default'}'."
+        logger.info(f"Retornando {len(tables)} tabelas encontradas no banco {cid}")
         return "Tabelas:\n" + "\n".join(f"  - {t[0]}.{t[1]}" for t in tables)
         
     elif engine == "mongodb":
         if not database:
+            logger.warning("Database não informado para listar coleções MongoDB.")
             return "Erro: database e obrigatorio para MongoDB."
         cols = adapter.list_collections(cid, database)
         if not cols:
+            logger.info(f"Nenhuma coleção no database '{database}' para {cid}")
             return f"Nenhuma colecao no database '{database}'."
+        logger.info(f"Retornando {len(cols)} coleções para {cid}")
         return f"Colecoes no database '{database}':\n" + "\n".join(f"  - {c}" for c in cols)
         
     elif engine == "redis":
@@ -136,8 +154,10 @@ def db_list_resources(
         out = f"Chaves encontradas (padrao '{pat}'):\n" + "\n".join(lines)
         if res.get("nextCursor"):
             out += f"\nProximo cursor: {res['nextCursor']}"
+        logger.info(f"Retornando {len(res['keys'])} chaves Redis para {cid}")
         return out
         
+    logger.error(f"Engine de banco não suportado para listagem de recursos: {engine}")
     return "Engine nao suportado."
 
 @mcp.tool(name="db_get_metadata")
@@ -204,24 +224,33 @@ def db_query_sql(
     limit: Optional[int] = None,
     output_format: Optional[str] = "json"
 ) -> str:
+    logger.info(f"Executando query SQL na conexão {connection_id}. Query original: {query.strip()}")
     cid = resolve_connection_id(connection_id)
     adapter, engine = get_db_adapter(cid)
     
     if engine not in {"sqlite", "postgresql", "mysql", "sqlserver", "oracle"}:
+        logger.warning(f"Tentativa de executar query SQL em banco não SQL. Engine: {engine}")
         return "db_query_sql so se aplica a conexoes SQL."
         
     try:
         validated_query = sql_validator.sanitize_or_raise(query)
     except QuerySafetyError as e:
+        logger.error(f"Erro de segurança ao validar query SQL: {e}")
         return f"Erro de seguranca: {str(e)}"
         
     cap = settings["max_row_limit"]
     lim = limit if (limit is not None and limit > 0) else settings["default_row_limit"]
     lim = min(max(1, lim), cap)
     
-    res = adapter.execute_read_only(cid, validated_query, lim, settings["query_timeout_ms"] // 1000)
+    logger.info(f"Query higienizada para execução no {engine}: {validated_query} (limite: {lim})")
+    try:
+        res = adapter.execute_read_only(cid, validated_query, lim, settings["query_timeout_ms"] // 1000)
+    except Exception as e:
+        logger.error(f"Falha na execução da query no banco {cid}: {e}")
+        raise
     
     fmt = output_format or "json"
+    logger.info(f"Query executada com sucesso. Retornando {res['row_count']} linhas no formato {fmt}")
     if fmt == "csv":
         return FormatterService.query_result_to_csv(res["columns"], res["rows"])
     elif fmt == "table":

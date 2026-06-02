@@ -1,6 +1,9 @@
 import os
+import logging
 from urllib.parse import urlparse, quote_plus
 from dotenv import load_dotenv
+
+logger = logging.getLogger("nautilus")
 
 load_dotenv()
 
@@ -143,6 +146,8 @@ def load_databases_from_env():
             "url": url_val,
             "read_only": read_only
         }
+        logger.info(f"Conexão '{conn_id}' do tipo '{t}' carregada com sucesso do ambiente (Somente Leitura: {read_only}).")
+    logger.info(f"Total de conexões de banco de dados carregadas: {len(result)}")
     return result
 
 def get_settings():
