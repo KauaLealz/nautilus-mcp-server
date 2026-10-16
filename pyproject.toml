@@ -12,14 +12,21 @@ dependencies = [
     "pymssql>=2.3.13",
     "pymysql>=1.2.0",
     "python-dotenv>=1.2.2",
+    "pyyaml>=6.0",
     "redis>=8.0.0",
 ]
 
 [project.scripts]
-nautilus-mcp-server = "server:main"
+nautilus-mcp-server = "nautilus.server.app:main"
 
-[tool.setuptools]
-py-modules = ["server", "config", "validator", "formatter", "adapters"]
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "fakeredis>=2.21",
+]
+
+[tool.setuptools.packages.find]
+include = ["nautilus*"]
 
 
 
