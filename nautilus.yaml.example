@@ -1,0 +1,61 @@
+# Configuração do Nautilus MCP Server.
+# Copie para nautilus.yaml (ou aponte NAUTILUS_CONFIG para este caminho).
+#
+# Segredos SEMPRE por ${VAR} lido do ambiente — nunca senha em texto puro aqui.
+# Variável ausente referenciada por ${VAR} faz o servidor falhar cedo, com mensagem clara.
+
+defaults:
+  read_only: true           # padrão global; cada conexão pode sobrescrever
+  query_timeout_ms: 30000   # timeout de statement (ms)
+  connect_timeout_ms: 5000  # timeout para abrir a conexão (ms)
+  max_rows: 200             # teto de linhas/documentos por chamada
+  default_rows: 50          # padrão quando a tool não recebe limit
+  query_max_length: 2000
+
+connections:
+  # --- URL única (segredo embutido vem do ambiente) ---
+  pg-prod:
+    type: postgresql
+    url: "${PG_PROD_URL}"
+    read_only: true
+    query_timeout_ms: 60000  # override por conexão (consultas pesadas)
+
+  # --- Por componentes (host/user/password/database) ---
+  mysql-app:
+    type: mysql              # 'mariadb' é aceito e normalizado para mysql
+    host: "${MYSQL_HOST}"
+    port: 3306
+    user: "${MYSQL_USER}"
+    password: "${MYSQL_PASS}"
+    database: appdb
+    read_only: false         # sobrescreve o default global
+
+  oracle-rh:
+    type: oracle
+    host: "${ORA_HOST}"
+    port: 1521
+    user: "${ORA_USER}"
+    password: "${ORA_PASS}"
+    database: ORCLPDB1        # service name
+
+  mssql-bi:
+    type: sqlserver
+    host: "${MSSQL_HOST}"
+    port: 1433
+    user: "${MSSQL_USER}"
+    password: "${MSSQL_PASS}"
+    database: BI
+
+  mongo-events:
+    type: mongodb
+    url: "${MONGO_URL}"
+
+  redis-cache:
+    type: redis
+    url: "${REDIS_URL}"
+    socket_timeout_ms: 10000  # teto por operação (padrão = query_timeout_ms)
+
+  # --- SQLite local (sem segredo) ---
+  local-lite:
+    type: sqlite
+    path: "./data/app.db"     # ou url: "file:..." ou ":memory:"

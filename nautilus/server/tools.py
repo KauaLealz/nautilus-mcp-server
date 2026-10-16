@@ -23,7 +23,7 @@ def db_list_connections() -> str:
     connections = [{"connection_id": cid, "type": cfg["type"], "read_only": cfg["read_only"]} for cid, cfg in databases.items()]
     if not connections:
         logger.warning("Nenhuma conexão configurada encontrada.")
-        return "Nenhuma conexao configurada. Defina variaveis DATABASES__<connection_id>__*."
+        return "Nenhuma conexao configurada. Defina as conexoes no arquivo YAML (env NAUTILUS_CONFIG, padrao nautilus.yaml)."
     lines = [f"- {c['connection_id']}: engine {c['type']}{' (read_only)' if c['read_only'] else ''}" for c in connections]
     logger.info(f"Retornando {len(connections)} conexões configuradas.")
     return f"Conexoes disponiveis ({len(connections)}):\n" + "\n".join(lines)
