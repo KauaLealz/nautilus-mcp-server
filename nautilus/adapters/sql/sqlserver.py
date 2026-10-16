@@ -4,6 +4,7 @@ import time
 import logging
 
 from nautilus.core.sql_utils import q_id
+from nautilus.adapters.base import query_timeout_s, connect_timeout_s
 
 logger = logging.getLogger("nautilus")
 
@@ -59,7 +60,8 @@ class MssqlAdapter:
                 server=params.get("host"), port=params.get("port", 1433),
                 user=params.get("user"), password=params.get("password"),
                 database=params.get("database"), autocommit=True,
-                login_timeout=5
+                login_timeout=connect_timeout_s(self.configs, connection_id),
+                timeout=query_timeout_s(self.configs, connection_id)
             )
             self.conns[connection_id] = conn
         return conn
@@ -86,7 +88,7 @@ class MssqlAdapter:
         except Exception as e:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
-    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
+    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_ms: int = None) -> dict:
         q = query.strip().rstrip(";")
         if not re.search(r"\bTOP\s+\d+", q, re.IGNORECASE) and not re.search(r"\bOFFSET\s+\d+", q, re.IGNORECASE):
             if q.lower().startswith("select"):
@@ -148,7 +150,7 @@ class MssqlAdapter:
         sch = schema or "dbo"
         lim = max(1, min(limit, 50000))
         q = f"SELECT TOP {lim} * FROM {q_id(sch)}.{q_id(table_name)}"
-        return self.execute_read_only(connection_id, q, lim, 10)
+        return self.execute_read_only(connection_id, q, lim)
 
     def get_schema_summary(self, connection_id: str, schema: str, include_row_count: bool) -> list:
         conn = self.get_conn(connection_id)

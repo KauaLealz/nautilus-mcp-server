@@ -4,6 +4,7 @@ import time
 import logging
 
 from nautilus.core.sql_utils import q_id, parse_sql_url
+from nautilus.adapters.base import query_timeout_ms, query_timeout_s, connect_timeout_s
 
 logger = logging.getLogger("nautilus")
 
@@ -28,9 +29,12 @@ class MysqlAdapter:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
             logger.info(f"Criando nova conexao MySQL para {connection_id}")
             host, port, user, password, db = parse_sql_url(cfg["url"])
+            read_tmo = query_timeout_s(self.configs, connection_id)
             conn = pymysql.connect(
                 host=host, port=port or 3306, user=user, password=password, database=db,
-                autocommit=True, connect_timeout=5
+                autocommit=True,
+                connect_timeout=connect_timeout_s(self.configs, connection_id),
+                read_timeout=read_tmo, write_timeout=read_tmo
             )
             self.conns[connection_id] = conn
         return conn
@@ -57,13 +61,19 @@ class MysqlAdapter:
         except Exception as e:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
-    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
+    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_ms: int = None) -> dict:
         q = query.strip().rstrip(";")
         if not re.search(r"\bLIMIT\s+\d+", q, re.IGNORECASE):
             q = f"{q} LIMIT {max_rows}"
+        tmo_ms = timeout_ms or query_timeout_ms(self.configs, connection_id)
         try:
             conn = self.get_conn(connection_id)
             with conn.cursor() as cur:
+                try:
+                    # MySQL 5.7.8+; MariaDB não tem — o read_timeout do socket cobre ambos.
+                    cur.execute(f"SET SESSION MAX_EXECUTION_TIME={int(tmo_ms)}")
+                except Exception:
+                    pass
                 cur.execute(q)
                 if cur.description is None:
                     return {"columns": [], "rows": [], "row_count": 0}
@@ -120,7 +130,7 @@ class MysqlAdapter:
         lim = max(1, min(limit, 50000))
         off = max(0, min(offset, 1000000))
         q = f"SELECT * FROM {prefix}{q_id(table_name)} LIMIT {lim} OFFSET {off}"
-        return self.execute_read_only(connection_id, q, lim, 10)
+        return self.execute_read_only(connection_id, q, lim)
 
     def get_schema_summary(self, connection_id: str, schema: str, include_row_count: bool) -> list:
         conn = self.get_conn(connection_id)

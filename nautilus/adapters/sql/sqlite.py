@@ -4,6 +4,7 @@ import time
 import logging
 
 from nautilus.core.sql_utils import q_id
+from nautilus.adapters.base import query_timeout_ms
 
 logger = logging.getLogger("nautilus")
 
@@ -43,14 +44,25 @@ class SqliteAdapter:
         except Exception as e:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
-    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
+    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_ms: int = None) -> dict:
         conn = self.get_conn(connection_id)
         q = query.strip().rstrip(";")
         if not re.search(r"\bLIMIT\s+\d+", q, re.IGNORECASE):
             q = f"{q} LIMIT {max_rows}"
-        cursor = conn.cursor()
-        cursor.execute(q)
-        rows = cursor.fetchall()
+        tmo_ms = timeout_ms or query_timeout_ms(self.configs, connection_id)
+        deadline = time.monotonic() + (tmo_ms / 1000.0)
+
+        def _guard():
+            # Retornar != 0 aborta a execução; o SQLite levanta OperationalError.
+            return 1 if time.monotonic() > deadline else 0
+
+        conn.set_progress_handler(_guard, 10000)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(q)
+            rows = cursor.fetchall()
+        finally:
+            conn.set_progress_handler(None, 10000)
         if not rows:
             return {"columns": [d[0] for d in cursor.description] if cursor.description else [], "rows": [], "row_count": 0}
         columns = [d[0] for d in cursor.description]

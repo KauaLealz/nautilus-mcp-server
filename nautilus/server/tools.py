@@ -160,7 +160,7 @@ def db_query_sql(
 
     logger.info(f"Query higienizada para execução no {engine}: {validated_query} (limite: {lim})")
     try:
-        res = adapter.execute_read_only(cid, validated_query, lim, settings["query_timeout_ms"] // 1000)
+        res = adapter.execute_read_only(cid, validated_query, lim)
     except Exception as e:
         logger.error(f"Falha na execução da query no banco {cid}: {e}")
         raise

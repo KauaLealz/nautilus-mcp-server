@@ -3,7 +3,10 @@ import re
 import time
 import logging
 
+from urllib.parse import urlparse, unquote
+
 from nautilus.core.sql_utils import q_id
+from nautilus.adapters.base import query_timeout_ms, connect_timeout_s
 
 logger = logging.getLogger("nautilus")
 
@@ -39,7 +42,10 @@ class OracleAdapter:
             password = unquote(parsed.password) if parsed.password else None
             dsn = f"{parsed.hostname}:{parsed.port or 1521}/{parsed.path.lstrip('/')}"
             logger.info(f"Criando nova conexao Oracle para {connection_id}")
-            conn = oracledb.connect(user=user, password=password, dsn=dsn)
+            conn = oracledb.connect(
+                user=user, password=password, dsn=dsn,
+                tcp_connect_timeout=connect_timeout_s(self.configs, connection_id)
+            )
             self.conns[connection_id] = conn
         return conn
 
@@ -65,12 +71,14 @@ class OracleAdapter:
         except Exception as e:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
-    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
+    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_ms: int = None) -> dict:
         q = query.strip().rstrip(";")
         if not re.search(r"\bFETCH\s+FIRST\s+\d+", q, re.IGNORECASE) and not re.search(r"\bROWNUM\b", q, re.IGNORECASE):
             q = f"SELECT * FROM ({q}) WHERE ROWNUM <= {max_rows}"
+        tmo_ms = timeout_ms or query_timeout_ms(self.configs, connection_id)
         try:
             conn = self.get_conn(connection_id)
+            conn.call_timeout = int(tmo_ms)  # oracledb: timeout por round-trip, em ms
             with conn.cursor() as cur:
                 cur.execute(q)
                 if cur.description is None:
@@ -128,7 +136,7 @@ class OracleAdapter:
         sch = schema or "USER"
         lim = max(1, min(limit, 50000))
         q = f"SELECT * FROM {q_id(sch)}.{q_id(table_name)} WHERE ROWNUM <= {lim}"
-        return self.execute_read_only(connection_id, q, lim, 10)
+        return self.execute_read_only(connection_id, q, lim)
 
     def get_schema_summary(self, connection_id: str, schema: str, include_row_count: bool) -> list:
         conn = self.get_conn(connection_id)

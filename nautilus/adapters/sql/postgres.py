@@ -4,6 +4,7 @@ import time
 import logging
 
 from nautilus.core.sql_utils import q_id
+from nautilus.adapters.base import query_timeout_ms, connect_timeout_s
 
 logger = logging.getLogger("nautilus")
 
@@ -38,7 +39,10 @@ class PostgresAdapter:
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
             logger.info(f"Criando nova conexao Postgres para {connection_id}")
-            conn = psycopg.connect(cfg["url"], autocommit=True, connect_timeout=5)
+            conn = psycopg.connect(
+                cfg["url"], autocommit=True,
+                connect_timeout=connect_timeout_s(self.configs, connection_id)
+            )
             self.conns[connection_id] = conn
         return conn
 
@@ -64,14 +68,15 @@ class PostgresAdapter:
         except Exception as e:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
-    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_seconds: int) -> dict:
+    def execute_read_only(self, connection_id: str, query: str, max_rows: int, timeout_ms: int = None) -> dict:
         q = query.strip().rstrip(";")
         if not re.search(r"\bLIMIT\s+\d+", q, re.IGNORECASE):
             q = f"{q} LIMIT {max_rows}"
+        tmo_ms = timeout_ms or query_timeout_ms(self.configs, connection_id)
         try:
             conn = self.get_conn(connection_id)
             with conn.cursor() as cur:
-                cur.execute(f"SET statement_timeout = {timeout_seconds * 1000}")
+                cur.execute(f"SET statement_timeout = {int(tmo_ms)}")
                 cur.execute(q)
                 if cur.description is None:
                     return {"columns": [], "rows": [], "row_count": 0}
@@ -127,7 +132,7 @@ class PostgresAdapter:
         lim = max(1, min(limit, 50000))
         off = max(0, min(offset, 1000000))
         q = f"SELECT * FROM {q_id(sch)}.{q_id(table_name)} LIMIT {lim} OFFSET {off}"
-        return self.execute_read_only(connection_id, q, lim, 10)
+        return self.execute_read_only(connection_id, q, lim)
 
     def get_schema_summary(self, connection_id: str, schema: str, include_row_count: bool) -> list:
         conn = self.get_conn(connection_id)
