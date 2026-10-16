@@ -8,11 +8,11 @@
 
 - **Bancos SQL** (PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle): listar tabelas, ver colunas e índices, executar apenas consultas de leitura (`SELECT` / `WITH`) com validação de segurança e limite de linhas, e pequenas amostras de dados.
 - **MongoDB**: listar coleções, buscar documentos com filtro em JSON e paginação, ver índices da coleção, amostra rápida.
-- **Redis**: listar chaves (com padrão e cursor), ler valores conforme o tipo da chave (string, hash, lista, set, sorted set), amostra rápida.
+- **Redis**: listar chaves (com padrão e cursor), ler valores conforme o tipo da chave (string, hash, lista, set, sorted set, **stream** e **RedisJSON**), com decode seguro de binário e teto de bytes por valor; amostra rápida.
 
 Em muitas respostas o cliente recebe também **`structuredContent`** (JSON estruturado) além do texto, para quem consome colunas, linhas, documentos ou chaves sem depender só de texto formatado.
 
-Comportamento padrão: **somente leitura** no SQL; limites globais de tamanho de query, timeout e número de linhas/registros podem ser ajustados por variáveis de ambiente (veja abaixo).
+Comportamento padrão: **somente leitura** no SQL; tamanho de query, timeout e número de linhas/registros têm defaults globais no YAML (bloco `defaults`) e podem ser sobrescritos por conexão (veja abaixo).
 
 ## Tools
 
@@ -35,62 +35,71 @@ Comportamento padrão: **somente leitura** no SQL; limites globais de tamanho de
 
 ## Como configurar as conexões
 
+As conexões ficam num **único arquivo YAML**. O servidor lê o caminho de `NAUTILUS_CONFIG` (padrão `./nautilus.yaml`) e **valida na subida, falhando cedo** com mensagem clara se algo estiver inconsistente. Veja `nautilus.yaml.example` para um modelo completo.
+
 Cada conexão tem um **identificador** (`connection_id`): letras, números e underscores (ex.: `pg_prod`, `mongo_app`).
 
-Todas as variáveis seguem o padrão:
+> **Segredos sempre por `${VAR}`.** Qualquer valor pode referenciar uma variável de ambiente com `${NOME}`; o servidor a resolve do ambiente e **falha cedo** se ela não existir (a mensagem cita só o nome, nunca o valor). Nunca coloque senha em texto puro no YAML.
 
-`DATABASES__<connection_id>__<atributo>`
+### Estrutura
 
-### Obrigatório por conexão
+```yaml
+defaults:                 # valores herdados por todas as conexões (todos opcionais)
+  read_only: true
+  query_timeout_ms: 30000
+  connect_timeout_ms: 5000
+  max_rows: 200
+  default_rows: 50
+  query_max_length: 2000
 
-- **`type`**: um entre `postgresql`, `mysql`, `mariadb` (tratado como MySQL), `sqlite`, `sqlserver`, `oracle`, `mongodb`, `redis`.
+connections:
+  <connection_id>:
+    type: <engine>        # obrigatório
+    # ...atributos da conexão...
+```
+
+### Por conexão
+
+- **`type`** (obrigatório): um entre `postgresql`, `mysql`, `mariadb` (tratado como MySQL), `sqlite`, `sqlserver`, `oracle`, `mongodb`, `redis`.
 - **Conexão**, em um dos dois formatos:
-  - **`url`**: URL completa de conexão (ex.: `postgresql://user:senha@host:5432/banco`, `mongodb://host:27017/`, `redis://host:6379/0`, arquivo/path para SQLite conforme documentação do driver).
-  - **Ou campos separados** (útil se a senha tem `@`, `:`, `/`, etc.), sempre no formato `DATABASES__<connection_id>__…`: **`host`**, **`port`**, **`user`**, **`password`**, **`database`** ou **`db`**. Exemplo com id `pg`: `DATABASES__pg__host`, **`DATABASES__pg__port`** (ex.: `5432`), `DATABASES__pg__user`, `DATABASES__pg__password`, `DATABASES__pg__database`. Em vez de `port` separado, a porta pode ir junto em `host` (ex.: `db.exemplo.com:3306`). Se **`port`** for omitida e não estiver no `host`, usam-se portas padrão por tipo (PostgreSQL 5432, MySQL 3306, SQL Server 1433, Oracle 1521, MongoDB 27017, Redis 6379).
+  - **`url`**: URL completa (ex.: `postgresql://user:senha@host:5432/banco`). Para SQLite use `url: ":memory:"` ou `url: "file:..."`, ou o atalho `path:`.
+  - **Ou campos separados** (útil se a senha tem `@`, `:`, `/`): `host`, `port`, `user`, `password`, `database` (ou `db`). A porta pode ir junto em `host` (`db.exemplo.com:3306`); omitida, usa-se a padrão por tipo (PostgreSQL 5432, MySQL 3306, SQL Server 1433, Oracle 1521, MongoDB 27017, Redis 6379).
+- **Overrides opcionais do `defaults`**: `read_only`, `query_timeout_ms`, `connect_timeout_ms`. Redis aceita ainda `socket_timeout_ms` (teto por operação; padrão = `query_timeout_ms`).
 
-### Opcional por conexão
+### Exemplos
 
-- **`read_only`**: padrão é somente leitura.
+PostgreSQL por URL, com timeout maior só nesta conexão:
 
-### Limites e opções globais (opcional)
-
-| Variável | Efeito (padrão se omitida) |
-|----------|----------------------------|
-| `NAUTILUS_QUERY_MAX_LENGTH` | Tamanho máximo da query SQL em caracteres (2000). |
-| `NAUTILUS_MAX_ROW_LIMIT` ou `NAUTILUS_MAX_ROWS` | Teto de linhas/registros e validação de `LIMIT` (200). |
-| `NAUTILUS_DEFAULT_ROW_LIMIT` | Limite padrão quando a tool não fixa outro (50, até o máximo). |
-| `NAUTILUS_QUERY_TIMEOUT_MS` | Timeout das operações em milissegundos (5000 se não usar a de segundos). |
-| `NAUTILUS_QUERY_TIMEOUT_SECONDS` | Alternativa ao timeout em ms (só usada se `NAUTILUS_QUERY_TIMEOUT_MS` não estiver definida). |
-| `NAUTILUS_READ_ONLY_MODE` | Modo somente leitura (`true` por padrão). |
-
-### Exemplos (`.env` ou `env` do MCP)
-
-PostgreSQL por URL:
-
-```env
-DATABASES__pg__type=postgresql
-DATABASES__pg__url=postgresql://user:password@localhost:5432/mydb
+```yaml
+connections:
+  pg:
+    type: postgresql
+    url: "${PG_URL}"
+    query_timeout_ms: 60000
 ```
 
-PostgreSQL com host e senha com caracteres especiais:
+PostgreSQL por componentes (senha vem do ambiente), não somente-leitura:
 
-```env
-DATABASES__pg__type=postgresql
-DATABASES__pg__host=localhost
-DATABASES__pg__port=5432
-DATABASES__pg__user=myuser
-DATABASES__pg__password=pa@ss:word/with
-DATABASES__pg__database=mydb
+```yaml
+connections:
+  pg_app:
+    type: postgresql
+    host: localhost
+    port: 5432
+    user: myuser
+    password: "${PG_APP_PASSWORD}"
+    database: mydb
+    read_only: false
 ```
 
-MySQL com host e porta no mesmo campo:
+Redis com teto de operação:
 
-```env
-DATABASES__app__type=mysql
-DATABASES__app__host=db.exemplo.com:3306
-DATABASES__app__user=app
-DATABASES__app__password=secret
-DATABASES__app__database=appdb
+```yaml
+connections:
+  cache:
+    type: redis
+    url: "${REDIS_URL}"
+    socket_timeout_ms: 10000
 ```
 
 ## Como usar nos clientes
@@ -99,7 +108,7 @@ Em qualquer cliente MCP com transporte **stdio**, configure:
 
 - **Comando**: `npx` (no Windows, se necessário, use o caminho completo de `npx.cmd`).
 - **Argumentos**: use `["-y", "nautilus-mcp-server@latest"]`. Opcionalmente fixe versão com `["-y", "nautilus-mcp-server@<versão>"]`.
-- **Variáveis de ambiente**: todas as `DATABASES__…` e, se quiser, as `NAUTILUS__…`.
+- **Variáveis de ambiente**: `NAUTILUS_CONFIG` (caminho do YAML) e os segredos referenciados por `${VAR}` dentro dele.
 
 Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
 
@@ -110,12 +119,8 @@ Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
       "command": "npx",
       "args": ["-y", "nautilus-mcp-server@latest"],
       "env": {
-        "DATABASES__pg__type": "postgresql",
-        "DATABASES__pg__host": "localhost",
-        "DATABASES__pg__port": "5432",
-        "DATABASES__pg__user": "app",
-        "DATABASES__pg__password": "secret",
-        "DATABASES__pg__database": "appdb"
+        "NAUTILUS_CONFIG": "C:/caminho/para/nautilus.yaml",
+        "PG_APP_PASSWORD": "secret"
       }
     }
   }

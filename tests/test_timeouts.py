@@ -72,6 +72,16 @@ def test_sqlite_fast_query_ok():
     assert res["rows"] == [[1]]
 
 
+def test_sqlite_get_table_sample_no_spurious_timeout():
+    # Regressão: get_table_sample não deve passar 10 (ms) como timeout.
+    a = SqliteAdapter({"lite": {"url": ":memory:", "query_timeout_ms": 30000}})
+    conn = a.get_conn("lite")
+    conn.execute("CREATE TABLE t (id INTEGER)")
+    conn.executemany("INSERT INTO t (id) VALUES (?)", [(i,) for i in range(2000)])
+    res = a.get_table_sample("lite", "t", None, limit=100, offset=500)
+    assert res["row_count"] == 100
+
+
 # --- valor de timeout chega ao driver, sem truncar ---
 
 def test_postgres_sets_statement_timeout_in_ms():

@@ -92,7 +92,7 @@ class SqliteAdapter:
         lim = max(1, min(limit, 50000))
         off = max(0, min(offset, 1000000))
         q = f"SELECT * FROM {q_id(table_name)} LIMIT {lim} OFFSET {off}"
-        return self.execute_read_only(connection_id, q, lim, 10)
+        return self.execute_read_only(connection_id, q, lim)
 
     def get_schema_summary(self, connection_id: str, schema: str, include_row_count: bool) -> list:
         tables = self.list_tables(connection_id, schema)

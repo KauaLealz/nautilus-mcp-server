@@ -97,6 +97,14 @@ def test_stream_sample():
     assert res["entries"][0]["fields"]["evt"] == "login"
 
 
+def test_scan_non_numeric_cursor_does_not_crash():
+    fr = fakeredis.FakeStrictRedis()
+    fr.set("k:1", 1)
+    a = _adapter_with(fr)
+    res = a.scan_keys("r", "k:*", max_keys=5, start_cursor="lixo")
+    assert isinstance(res["keys"], list)
+
+
 def test_missing_key_reports_not_exists():
     fr = fakeredis.FakeStrictRedis()
     a = _adapter_with(fr)

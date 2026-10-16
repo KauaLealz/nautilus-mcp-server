@@ -99,6 +99,13 @@ class RedisAdapter:
         except Exception as e:
             return {"ok": False, "latencyMs": int((time.perf_counter() - t0) * 1000), "version": None, "error": str(e)}
 
+    def _safe_string(self, c, key):
+        """Lê só os primeiros MAX_VALUE_BYTES do valor (via GETRANGE) para não
+        materializar strings gigantes; devolve (valor_decodificado, tamanho_total)."""
+        length = c.strlen(key)
+        raw = c.getrange(key, 0, MAX_VALUE_BYTES)
+        return _decode(raw), length
+
     def get_key(self, connection_id: str, key: str):
         def op(c):
             raw_t = c.type(key)
@@ -107,13 +114,17 @@ class RedisAdapter:
                 return None
             if t != "string":
                 return {"error": f"Chave '{key}' e do tipo '{t}', nao string. Use db_read_cache para inspecionar."}
-            return _decode(c.get(key))
+            val, _ = self._safe_string(c, key)
+            return val
         return self._run(connection_id, op)
 
     def scan_keys(self, connection_id: str, pattern: str, max_keys: int, start_cursor: str = None) -> dict:
         cap = max(1, min(max_keys, 2000))
         pat = pattern.strip() if pattern else "*"
-        start = int(start_cursor) if (start_cursor and str(start_cursor) != "0") else 0
+        try:
+            start = int(start_cursor) if (start_cursor and str(start_cursor) != "0") else 0
+        except (TypeError, ValueError):
+            start = 0
 
         def op(c):
             out = []
@@ -164,7 +175,8 @@ class RedisAdapter:
                 return {"redis_type": "none", "exists": False}
 
             if t == "string":
-                return {"redis_type": "string", "value": _decode(c.get(key))}
+                val, length = self._safe_string(c, key)
+                return {"redis_type": "string", "value": val, "length": length, "truncated": length > MAX_VALUE_BYTES}
 
             if t == "hash":
                 h = c.hgetall(key)
