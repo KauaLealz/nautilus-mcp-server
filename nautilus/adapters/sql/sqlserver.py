@@ -8,6 +8,24 @@ from nautilus.adapters.base import query_timeout_s, connect_timeout_s
 
 logger = logging.getLogger("nautilus")
 
+# Pares key=value de uma connection string ODBC. O valor pode vir entre chaves
+# {...} (com }} escapando um } literal) ou cru até o próximo ;.
+_ODBC_PAIR = re.compile(r"([^=;]+)=(\{(?:[^}]|\}\})*\}|[^;]*);?")
+
+
+def _parse_odbc(connstr: str) -> dict:
+    out = {}
+    for m in _ODBC_PAIR.finditer(connstr):
+        key = m.group(1).strip().lower()
+        if not key:
+            continue
+        raw = m.group(2)
+        if raw.startswith("{") and raw.endswith("}"):
+            out[key] = raw[1:-1].replace("}}", "}")
+        else:
+            out[key] = raw.strip()
+    return out
+
 
 class MssqlAdapter:
     def __init__(self, configs):
@@ -36,25 +54,22 @@ class MssqlAdapter:
             cfg = self.configs.get(connection_id)
             if not cfg:
                 raise ValueError(f"Conexao nao encontrada: {connection_id}")
-            url_val = cfg["url"]
+            raw = _parse_odbc(cfg["url"])
             params = {}
-            for p in url_val.split(";"):
-                if "=" in p:
-                    k, v = p.split("=", 1)
-                    k_lower = k.strip().lower()
-                    if k_lower == "server":
-                        if "," in v:
-                            host_part, port_part = v.split(",", 1)
-                            params["host"] = host_part.strip()
-                            params["port"] = int(port_part.strip())
-                        else:
-                            params["host"] = v.strip()
-                    elif k_lower == "database":
-                        params["database"] = v.strip()
-                    elif k_lower == "user id" or k_lower == "uid":
-                        params["user"] = v.strip()
-                    elif k_lower == "password" or k_lower == "pwd":
-                        params["password"] = v.strip()
+            server = raw.get("server", "")
+            if "," in server:
+                host_part, port_part = server.split(",", 1)
+                params["host"] = host_part.strip()
+                try:
+                    params["port"] = int(port_part.strip())
+                except ValueError:
+                    pass
+            elif server:
+                params["host"] = server
+            if "database" in raw:
+                params["database"] = raw["database"]
+            params["user"] = raw.get("uid", raw.get("user id"))
+            params["password"] = raw.get("pwd", raw.get("password"))
             logger.info(f"Criando nova conexao MSSQL para {connection_id}")
             conn = pymssql.connect(
                 server=params.get("host"), port=params.get("port", 1433),

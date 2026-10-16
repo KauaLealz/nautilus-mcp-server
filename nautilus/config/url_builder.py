@@ -1,4 +1,4 @@
-from urllib.parse import quote_plus
+from urllib.parse import quote
 
 SUPPORTED_ENGINES = {
     "postgresql", "mysql", "mariadb", "sqlite", "sqlserver", "oracle", "mongodb", "redis"
@@ -38,12 +38,15 @@ def default_port(db_type: str) -> str:
 
 
 def odbc_escape(value: str) -> str:
-    return value.replace("}", "}}")
+    # ODBC: envolve o valor em chaves e dobra qualquer } interno, para que
+    # ; = e espaços na senha/usuário não quebrem a connection string.
+    return "{" + str(value).replace("}", "}}") + "}"
 
 
 def build_url_from_components(db_type: str, user: str, password: str, host: str, port: str, database: str) -> str:
-    safe_user = quote_plus(user) if user else ""
-    safe_password = quote_plus(password) if password else ""
+    # quote (não quote_plus): espaço vira %20, que o unquote na leitura reverte.
+    safe_user = quote(user, safe="") if user else ""
+    safe_password = quote(password, safe="") if password else ""
 
     if db_type == "postgresql":
         path = database.strip().lstrip("/") or "postgres"
