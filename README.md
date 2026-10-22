@@ -39,7 +39,27 @@ As conexões ficam num **único arquivo YAML**. O servidor lê o caminho de `NAU
 
 Cada conexão tem um **identificador** (`connection_id`): letras, números e underscores (ex.: `pg_prod`, `mongo_app`).
 
-> **Segredos sempre por `${VAR}`.** Qualquer valor pode referenciar uma variável de ambiente com `${NOME}`; o servidor a resolve do ambiente e **falha cedo** se ela não existir (a mensagem cita só o nome, nunca o valor). Nunca coloque senha em texto puro no YAML.
+> **A senha fica cifrada no YAML.** O campo `password` **só** é aceito cifrado (formato `enc:...`); texto puro e `${VAR}` são recusados na subida. Para gravar uma senha, use o CLI `nautilus` (abaixo), que a cifra com a chave `NAUTILUS_KEY` antes de escrever no arquivo. Os demais campos (`host`, `user`, `database`, `url`) continuam aceitando `${VAR}` lido do ambiente.
+
+### Cadastrar conexões pelo CLI
+
+Toda **adição, alteração e remoção** de conexão passa pelo CLI — ele edita o `nautilus.yaml` e cifra a senha na hora. A chave de criptografia vive **fora** do YAML, na variável `NAUTILUS_KEY` (sem ela, o valor cifrado é inútil).
+
+```bash
+# 1. Gere a chave uma vez e exporte-a no ambiente (guarde-a com segurança)
+nautilus keygen                       # imprime a chave; defina NAUTILUS_KEY com ela
+
+# 2. Gerencie as conexões (a senha é pedida de forma oculta e cifrada ao salvar)
+nautilus add pg_prod                  # pergunta type/host/port/user/senha/database
+nautilus list                         # lista as conexões (nunca mostra a senha)
+nautilus edit pg_prod                 # altera campos; senha em branco mantém a atual
+nautilus remove pg_prod               # remove a conexão
+
+# Use --config para apontar outro arquivo (padrão: NAUTILUS_CONFIG ou ./nautilus.yaml)
+nautilus --config C:/caminho/nautilus.yaml list
+```
+
+> **Importante:** a **mesma** `NAUTILUS_KEY` usada no `nautilus add` precisa estar no ambiente do servidor — é com ela que o Nautilus decifra as senhas ao subir. Troca de chave implica regravar as senhas.
 
 ### Estrutura
 
@@ -78,7 +98,7 @@ connections:
     query_timeout_ms: 60000
 ```
 
-PostgreSQL por componentes (senha vem do ambiente), não somente-leitura:
+PostgreSQL por componentes, não somente-leitura (a senha cifrada foi gravada por `nautilus add`/`edit`):
 
 ```yaml
 connections:
@@ -87,7 +107,7 @@ connections:
     host: localhost
     port: 5432
     user: myuser
-    password: "${PG_APP_PASSWORD}"
+    password: "enc:gAAAAAB..."   # gerado pelo CLI; nunca edite à mão
     database: mydb
     read_only: false
 ```
@@ -108,7 +128,7 @@ Em qualquer cliente MCP com transporte **stdio**, configure:
 
 - **Comando**: `npx` (no Windows, se necessário, use o caminho completo de `npx.cmd`).
 - **Argumentos**: use `["-y", "nautilus-mcp-server@latest"]`. Opcionalmente fixe versão com `["-y", "nautilus-mcp-server@<versão>"]`.
-- **Variáveis de ambiente**: `NAUTILUS_CONFIG` (caminho do YAML) e os segredos referenciados por `${VAR}` dentro dele.
+- **Variáveis de ambiente**: `NAUTILUS_CONFIG` (caminho do YAML), `NAUTILUS_KEY` (chave que decifra as senhas — **obrigatória** se houver `password: enc:...`) e quaisquer `${VAR}` usados nos campos não-secretos do YAML.
 
 Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
 
@@ -120,7 +140,7 @@ Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
       "args": ["-y", "nautilus-mcp-server@latest"],
       "env": {
         "NAUTILUS_CONFIG": "C:/caminho/para/nautilus.yaml",
-        "PG_APP_PASSWORD": "secret"
+        "NAUTILUS_KEY": "a-chave-gerada-por-nautilus-keygen"
       }
     }
   }
