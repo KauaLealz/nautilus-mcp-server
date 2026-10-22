@@ -1,8 +1,11 @@
 # Configuração do Nautilus MCP Server.
 # Copie para nautilus.yaml (ou aponte NAUTILUS_CONFIG para este caminho).
 #
-# Segredos SEMPRE por ${VAR} lido do ambiente — nunca senha em texto puro aqui.
-# Variável ausente referenciada por ${VAR} faz o servidor falhar cedo, com mensagem clara.
+# Prefira gerir as conexões pelo CLI `nautilus` (add/edit/remove/list): ele
+# cifra a senha na gravação. O campo `password` só é aceito cifrado (enc:...);
+# texto puro e ${VAR} são recusados. A chave fica em NAUTILUS_KEY (gere com
+# `nautilus keygen`) e precisa estar no ambiente do servidor para decifrar.
+# Campos não-secretos (host/user/database/url) ainda aceitam ${VAR} do ambiente.
 
 defaults:
   read_only: true           # padrão global; cada conexão pode sobrescrever
@@ -13,20 +16,20 @@ defaults:
   query_max_length: 2000
 
 connections:
-  # --- URL única (segredo embutido vem do ambiente) ---
+  # --- URL única (escape hatch; o segredo embutido vem do ambiente) ---
   pg-prod:
     type: postgresql
     url: "${PG_PROD_URL}"
     read_only: true
     query_timeout_ms: 60000  # override por conexão (consultas pesadas)
 
-  # --- Por componentes (host/user/password/database) ---
+  # --- Por componentes (senha cifrada, gravada por `nautilus add`) ---
   mysql-app:
     type: mysql              # 'mariadb' é aceito e normalizado para mysql
     host: "${MYSQL_HOST}"
     port: 3306
     user: "${MYSQL_USER}"
-    password: "${MYSQL_PASS}"
+    password: "enc:gAAAAAB..."   # gerado pelo CLI — não edite à mão
     database: appdb
     read_only: false         # sobrescreve o default global
 
@@ -35,7 +38,7 @@ connections:
     host: "${ORA_HOST}"
     port: 1521
     user: "${ORA_USER}"
-    password: "${ORA_PASS}"
+    password: "enc:gAAAAAB..."
     database: ORCLPDB1        # service name
 
   mssql-bi:
@@ -43,7 +46,7 @@ connections:
     host: "${MSSQL_HOST}"
     port: 1433
     user: "${MSSQL_USER}"
-    password: "${MSSQL_PASS}"
+    password: "enc:gAAAAAB..."
     database: BI
 
   mongo-events:

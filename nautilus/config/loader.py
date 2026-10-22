@@ -10,6 +10,7 @@ from nautilus.config.url_builder import (
     default_port,
     build_url_from_components,
 )
+from nautilus.config.crypto import is_encrypted, decrypt, CryptoError
 
 logger = logging.getLogger("nautilus")
 
@@ -83,6 +84,27 @@ def _resolve_defaults(defaults_raw):
     }
 
 
+def _resolve_password(password_raw, ctx):
+    """Senha só é aceita cifrada (`enc:...`) e é decifrada com NAUTILUS_KEY.
+
+    Texto puro e ${VAR} não são aceitos — a senha deve ser gravada pelo CLI
+    (`nautilus add` / `nautilus edit`), que a cifra na hora.
+    """
+    if password_raw is None:
+        return ""
+    pw = str(password_raw)
+    if not is_encrypted(pw):
+        raise ConfigError(
+            f"{ctx}: a senha deve estar cifrada (formato 'enc:...'). "
+            f"Texto puro e ${{VAR}} não são aceitos — grave-a com "
+            f"`nautilus add` ou `nautilus edit`."
+        )
+    try:
+        return decrypt(pw)
+    except CryptoError as e:
+        raise ConfigError(f"{ctx}: {e}")
+
+
 def _build_connection(conn_id, data, defaults):
     ctx = f"conexão '{conn_id}'"
     if not isinstance(data, dict):
@@ -100,17 +122,11 @@ def _build_connection(conn_id, data, defaults):
 
     url_val = interpolate(data.get("url") or "", ctx).strip()
     user = interpolate(str(data.get("user", "")), ctx).strip()
-    password_raw = data.get("password")
-    password = interpolate(str(password_raw), ctx).strip() if password_raw is not None else ""
+    password = _resolve_password(data.get("password"), ctx)
     host_raw = interpolate(str(data.get("host", "")), ctx).strip()
     port_fallback = str(data.get("port", "")).strip() or default_port(t)
     host, port = parse_host_and_port(host_raw, port_fallback)
     database = interpolate(str(data.get("database", data.get("db", ""))), ctx).strip()
-
-    if password_raw is not None and "${" not in str(password_raw):
-        logger.warning(
-            f"{ctx}: senha em texto puro no YAML. Prefira referenciar ${{VAR}} do ambiente."
-        )
 
     if t == "sqlite":
         if not url_val:

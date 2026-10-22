@@ -1,12 +1,20 @@
 import pytest
 
 from nautilus.config.loader import load_config, ConfigError
+from nautilus.config import crypto
 
 
 def _write(tmp_path, text):
     p = tmp_path / "nautilus.yaml"
     p.write_text(text, encoding="utf-8")
     return str(p)
+
+
+@pytest.fixture
+def key(monkeypatch):
+    k = crypto.generate_key()
+    monkeypatch.setenv(crypto.KEY_ENV, k)
+    return k
 
 
 def test_url_direct(tmp_path):
@@ -25,15 +33,16 @@ connections:
     assert pg["connect_timeout_ms"] == 5000
 
 
-def test_components_build(tmp_path):
-    path = _write(tmp_path, """
+def test_components_build(tmp_path, key):
+    enc = crypto.encrypt("s3cret", key)
+    path = _write(tmp_path, f"""
 connections:
   app:
     type: mysql
     host: db.example.com
     port: 3306
     user: app
-    password: "s3cret"
+    password: "{enc}"
     database: appdb
 """)
     cfg = load_config(path)
@@ -118,18 +127,100 @@ connections:
     assert cfg["databases"]["slow"]["query_timeout_ms"] == 120000
 
 
-def test_mariadb_normalized(tmp_path):
-    path = _write(tmp_path, """
+def test_mariadb_normalized(tmp_path, key):
+    enc = crypto.encrypt("p", key)
+    path = _write(tmp_path, f"""
 connections:
   m:
     type: mariadb
     host: h
     user: u
-    password: p
+    password: "{enc}"
     database: d
 """)
     cfg = load_config(path)
     assert cfg["databases"]["m"]["type"] == "mysql"
+
+
+def test_encrypted_password_is_decrypted(tmp_path, key):
+    enc = crypto.encrypt("sênha com espaço", key)
+    path = _write(tmp_path, f"""
+connections:
+  app:
+    type: postgresql
+    host: h
+    user: u
+    password: "{enc}"
+    database: d
+""")
+    cfg = load_config(path)
+    # senha decifrada entra na URL já percent-encoded
+    assert "s%C3%AAnha%20com%20espa%C3%A7o" in cfg["databases"]["app"]["url"]
+
+
+def test_plaintext_password_rejected(tmp_path, key):
+    path = _write(tmp_path, """
+connections:
+  app:
+    type: postgresql
+    host: h
+    user: u
+    password: "texto-puro"
+    database: d
+""")
+    with pytest.raises(ConfigError) as exc:
+        load_config(path)
+    assert "cifrada" in str(exc.value)
+
+
+def test_envvar_password_rejected(tmp_path, key, monkeypatch):
+    monkeypatch.setenv("PG_PASS", "fromenv")
+    path = _write(tmp_path, """
+connections:
+  app:
+    type: postgresql
+    host: h
+    user: u
+    password: "${PG_PASS}"
+    database: d
+""")
+    with pytest.raises(ConfigError) as exc:
+        load_config(path)
+    assert "cifrada" in str(exc.value)
+
+
+def test_encrypted_password_without_key_raises(tmp_path, monkeypatch):
+    k = crypto.generate_key()
+    enc = crypto.encrypt("s3cret", k)
+    monkeypatch.delenv(crypto.KEY_ENV, raising=False)
+    path = _write(tmp_path, f"""
+connections:
+  app:
+    type: postgresql
+    host: h
+    user: u
+    password: "{enc}"
+    database: d
+""")
+    with pytest.raises(ConfigError) as exc:
+        load_config(path)
+    assert crypto.KEY_ENV in str(exc.value)
+
+
+def test_wrong_key_raises(tmp_path, monkeypatch):
+    enc = crypto.encrypt("s3cret", crypto.generate_key())
+    monkeypatch.setenv(crypto.KEY_ENV, crypto.generate_key())  # chave diferente
+    path = _write(tmp_path, f"""
+connections:
+  app:
+    type: postgresql
+    host: h
+    user: u
+    password: "{enc}"
+    database: d
+""")
+    with pytest.raises(ConfigError):
+        load_config(path)
 
 
 def test_sqlite_path(tmp_path):

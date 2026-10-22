@@ -23,7 +23,7 @@ logger = logging.getLogger("nautilus")
 
 mcp = FastMCP(
     "Nautilus",
-    instructions="Nautilus MCP multicloud: PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle, MongoDB, Redis. Somente leitura. Primeiro use db_list_connections para obter os connection_id. Tools: db_list_connections, db_list_resources, db_get_metadata, db_describe_indexes, db_query_sql, db_fetch_documents, db_read_cache, db_peek_sample. Limites: padrão 50 linhas/documentos, máximo 200; timeout padrão 30000 ms, configurável por conexão no YAML. Conexões via arquivo YAML (env NAUTILUS_CONFIG, padrão nautilus.yaml); segredos por ${VAR}. Recurso nautilus://connections: JSON com a mesma lista de conexões."
+    instructions="Nautilus MCP multicloud: PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle, MongoDB, Redis. Somente leitura. Primeiro use db_list_connections para obter os connection_id. Tools: db_list_connections, db_list_resources, db_get_metadata, db_describe_indexes, db_query_sql, db_fetch_documents, db_read_cache, db_peek_sample. Limites: padrão 50 linhas/documentos, máximo 200; timeout padrão 30000 ms, configurável por conexão no YAML. Conexões via arquivo YAML (env NAUTILUS_CONFIG, padrão nautilus.yaml); senhas cifradas (enc:...) decifradas com a chave NAUTILUS_KEY. Recurso nautilus://connections: JSON com a mesma lista de conexões."
 )
 settings = get_settings()
 databases = settings["databases"]
