@@ -2,10 +2,13 @@
 # Copie para nautilus.yaml (ou aponte NAUTILUS_CONFIG para este caminho).
 #
 # Prefira gerir as conexões pelo CLI `nautilus` (add/edit/remove/list): ele
-# cifra a senha na gravação. O campo `password` só é aceito cifrado (enc:...);
-# texto puro e ${VAR} são recusados. A chave fica em NAUTILUS_KEY (gere com
-# `nautilus keygen`) e precisa estar no ambiente do servidor para decifrar.
-# Campos não-secretos (host/user/database/url) ainda aceitam ${VAR} do ambiente.
+# cifra a senha na gravação. O campo `password` só é aceito cifrado (enc:...).
+# A chave fica em NAUTILUS_KEY (gere com `nautilus keygen`) e precisa estar no
+# ambiente do servidor para decifrar.
+#
+# Não há interpolação de ${VAR}: todos os valores vão literais no YAML. Os
+# ÚNICOS valores lidos do ambiente são NAUTILUS_CONFIG (caminho deste arquivo)
+# e NAUTILUS_KEY (a chave) — ambos definidos na config do MCP na sua IDE.
 
 defaults:
   read_only: true           # padrão global; cada conexão pode sobrescrever
@@ -16,46 +19,46 @@ defaults:
   query_max_length: 2000
 
 connections:
-  # --- URL única (escape hatch; o segredo embutido vem do ambiente) ---
+  # --- URL única (sem credencial, ou com a senha dentro da URL literal) ---
   pg-prod:
     type: postgresql
-    url: "${PG_PROD_URL}"
+    url: "postgresql://leitor:troque-me@db.prod.interno:5432/vendas"
     read_only: true
     query_timeout_ms: 60000  # override por conexão (consultas pesadas)
 
   # --- Por componentes (senha cifrada, gravada por `nautilus add`) ---
   mysql-app:
     type: mysql              # 'mariadb' é aceito e normalizado para mysql
-    host: "${MYSQL_HOST}"
+    host: db.exemplo.com
     port: 3306
-    user: "${MYSQL_USER}"
+    user: app
     password: "enc:gAAAAAB..."   # gerado pelo CLI — não edite à mão
     database: appdb
     read_only: false         # sobrescreve o default global
 
   oracle-rh:
     type: oracle
-    host: "${ORA_HOST}"
+    host: oracle.interno
     port: 1521
-    user: "${ORA_USER}"
+    user: rh_ro
     password: "enc:gAAAAAB..."
     database: ORCLPDB1        # service name
 
   mssql-bi:
     type: sqlserver
-    host: "${MSSQL_HOST}"
+    host: bi.interno
     port: 1433
-    user: "${MSSQL_USER}"
+    user: bi_ro
     password: "enc:gAAAAAB..."
     database: BI
 
   mongo-events:
     type: mongodb
-    url: "${MONGO_URL}"
+    url: "mongodb://eventos.interno:27017/"
 
   redis-cache:
     type: redis
-    url: "${REDIS_URL}"
+    url: "redis://cache.interno:6379/0"
     socket_timeout_ms: 10000  # teto por operação (padrão = query_timeout_ms)
 
   # --- SQLite local (sem segredo) ---

@@ -1,5 +1,3 @@
-import os
-import re
 import logging
 
 import yaml
@@ -15,8 +13,6 @@ from nautilus.config.crypto import is_encrypted, decrypt, CryptoError
 logger = logging.getLogger("nautilus")
 
 DEFAULT_CONFIG_PATH = "nautilus.yaml"
-
-_ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # Defaults de fábrica, usados quando o bloco `defaults` do YAML não os define.
 FACTORY_DEFAULTS = {
@@ -53,22 +49,6 @@ def _coerce_timeout(value, name, ctx):
     return n
 
 
-def interpolate(value, ctx):
-    """Troca ${VAR} pelo valor do ambiente. Variável ausente é erro de config."""
-    if not isinstance(value, str):
-        return value
-
-    def repl(match):
-        var = match.group(1).strip()
-        if var not in os.environ:
-            raise ConfigError(
-                f"Variável de ambiente '{var}' referenciada em {ctx} não está definida."
-            )
-        return os.environ[var]
-
-    return _ENV_PATTERN.sub(repl, value)
-
-
 def _resolve_defaults(defaults_raw):
     d = defaults_raw or {}
     if not isinstance(d, dict):
@@ -87,7 +67,7 @@ def _resolve_defaults(defaults_raw):
 def _resolve_password(password_raw, ctx):
     """Senha só é aceita cifrada (`enc:...`) e é decifrada com NAUTILUS_KEY.
 
-    Texto puro e ${VAR} não são aceitos — a senha deve ser gravada pelo CLI
+    Texto puro não é aceito — a senha deve ser gravada pelo CLI
     (`nautilus add` / `nautilus edit`), que a cifra na hora.
     """
     if password_raw is None:
@@ -95,9 +75,8 @@ def _resolve_password(password_raw, ctx):
     pw = str(password_raw)
     if not is_encrypted(pw):
         raise ConfigError(
-            f"{ctx}: a senha deve estar cifrada (formato 'enc:...'). "
-            f"Texto puro e ${{VAR}} não são aceitos — grave-a com "
-            f"`nautilus add` ou `nautilus edit`."
+            f"{ctx}: a senha deve estar cifrada (formato 'enc:...') — "
+            f"grave-a com `nautilus add` ou `nautilus edit`."
         )
     try:
         return decrypt(pw)
@@ -120,17 +99,17 @@ def _build_connection(conn_id, data, defaults):
         )
     t = "mysql" if raw_t == "mariadb" else raw_t
 
-    url_val = interpolate(data.get("url") or "", ctx).strip()
-    user = interpolate(str(data.get("user", "")), ctx).strip()
+    url_val = str(data.get("url") or "").strip()
+    user = str(data.get("user", "")).strip()
     password = _resolve_password(data.get("password"), ctx)
-    host_raw = interpolate(str(data.get("host", "")), ctx).strip()
+    host_raw = str(data.get("host", "")).strip()
     port_fallback = str(data.get("port", "")).strip() or default_port(t)
     host, port = parse_host_and_port(host_raw, port_fallback)
-    database = interpolate(str(data.get("database", data.get("db", ""))), ctx).strip()
+    database = str(data.get("database", data.get("db", ""))).strip()
 
     if t == "sqlite":
         if not url_val:
-            p = interpolate(str(data.get("path", data.get("file", ""))), ctx).strip()
+            p = str(data.get("path", data.get("file", ""))).strip()
             if p:
                 if p.startswith("file:") or p == ":memory:":
                     url_val = p

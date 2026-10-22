@@ -50,29 +50,16 @@ connections:
     assert url.startswith("mysql+pymysql://app:s3cret@db.example.com:3306/appdb")
 
 
-def test_env_interpolation(tmp_path, monkeypatch):
-    monkeypatch.setenv("PG_URL", "postgresql://u:p@h:5432/d")
+def test_env_var_not_interpolated_is_literal(tmp_path):
+    # ${VAR} não é mais interpolado: fica literal no valor (sem ler o ambiente).
     path = _write(tmp_path, """
 connections:
   pg:
     type: postgresql
-    url: "${PG_URL}"
+    url: "postgresql://u:p@${HOST}:5432/d"
 """)
     cfg = load_config(path)
-    assert cfg["databases"]["pg"]["url"] == "postgresql://u:p@h:5432/d"
-
-
-def test_missing_env_var_raises(tmp_path, monkeypatch):
-    monkeypatch.delenv("DOES_NOT_EXIST", raising=False)
-    path = _write(tmp_path, """
-connections:
-  pg:
-    type: postgresql
-    url: "${DOES_NOT_EXIST}"
-""")
-    with pytest.raises(ConfigError) as exc:
-        load_config(path)
-    assert "DOES_NOT_EXIST" in str(exc.value)
+    assert cfg["databases"]["pg"]["url"] == "postgresql://u:p@${HOST}:5432/d"
 
 
 def test_invalid_type_raises(tmp_path):

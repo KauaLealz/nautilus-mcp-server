@@ -39,7 +39,7 @@ As conexões ficam num **único arquivo YAML**. O servidor lê o caminho de `NAU
 
 Cada conexão tem um **identificador** (`connection_id`): letras, números e underscores (ex.: `pg_prod`, `mongo_app`).
 
-> **A senha fica cifrada no YAML.** O campo `password` **só** é aceito cifrado (formato `enc:...`); texto puro e `${VAR}` são recusados na subida. Para gravar uma senha, use o CLI `nautilus` (abaixo), que a cifra com a chave `NAUTILUS_KEY` antes de escrever no arquivo. Os demais campos (`host`, `user`, `database`, `url`) continuam aceitando `${VAR}` lido do ambiente.
+> **A senha fica cifrada no YAML.** O campo `password` **só** é aceito cifrado (formato `enc:...`); texto puro é recusado na subida. Para gravar uma senha, use o CLI `nautilus` (abaixo), que a cifra com a chave `NAUTILUS_KEY` antes de escrever no arquivo. Não há interpolação de `${VAR}`: todos os demais campos (`host`, `user`, `database`, `url`) vão **literais** no YAML. Os únicos valores lidos do ambiente são `NAUTILUS_CONFIG` e `NAUTILUS_KEY`.
 
 ### Cadastrar conexões pelo CLI
 
@@ -94,7 +94,7 @@ PostgreSQL por URL, com timeout maior só nesta conexão:
 connections:
   pg:
     type: postgresql
-    url: "${PG_URL}"
+    url: "postgresql://leitor:senha@db.interno:5432/vendas"
     query_timeout_ms: 60000
 ```
 
@@ -118,7 +118,7 @@ Redis com teto de operação:
 connections:
   cache:
     type: redis
-    url: "${REDIS_URL}"
+    url: "redis://cache.interno:6379/0"
     socket_timeout_ms: 10000
 ```
 
@@ -128,7 +128,7 @@ Em qualquer cliente MCP com transporte **stdio**, configure:
 
 - **Comando**: `npx` (no Windows, se necessário, use o caminho completo de `npx.cmd`).
 - **Argumentos**: use `["-y", "nautilus-mcp-server@latest"]`. Opcionalmente fixe versão com `["-y", "nautilus-mcp-server@<versão>"]`.
-- **Variáveis de ambiente**: `NAUTILUS_CONFIG` (caminho do YAML), `NAUTILUS_KEY` (chave que decifra as senhas — **obrigatória** se houver `password: enc:...`) e quaisquer `${VAR}` usados nos campos não-secretos do YAML.
+- **Variáveis de ambiente** (as únicas): `NAUTILUS_CONFIG` (caminho do YAML) e `NAUTILUS_KEY` (chave que decifra as senhas — **obrigatória** se houver `password: enc:...`). Nenhum outro valor é lido do ambiente.
 
 Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
 
