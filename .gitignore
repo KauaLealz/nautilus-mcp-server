@@ -6,5 +6,6 @@ nautilus.yaml
 __pycache__/
 dist/
 build/
+*.egg-info/
 *.log
 *.tsbuildinfo
