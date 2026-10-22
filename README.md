@@ -1,143 +1,91 @@
-# Nautilus MCP Server
+# nautilus-mcp-server
 
-## O que é
-
-É um servidor [Model Context Protocol (MCP)](https://modelcontextprotocol.io) que fala com o assistente pela entrada/saída padrão (**stdio**). Está publicado no npm como **`nautilus-mcp-server`** e precisa de **Node.js 18 ou superior**. Recomenda-se executar com **`npx -y nautilus-mcp-server@latest`** para o `npx` resolver sempre o dist-tag **latest** (evita reutilizar cache de instalação antiga). Se precisar travar em uma versão exata, use `nautilus-mcp-server@<versão>` no lugar de `@latest`.
+> Servidor [MCP](https://modelcontextprotocol.io) de **consulta somente-leitura** a bancos de dados — PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle, MongoDB e Redis — por um único arquivo de conexões, com senhas cifradas.
 
 ## O que faz
 
-- **Bancos SQL** (PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle): listar tabelas, ver colunas e índices, executar apenas consultas de leitura (`SELECT` / `WITH`) com validação de segurança e limite de linhas, e pequenas amostras de dados.
-- **MongoDB**: listar coleções, buscar documentos com filtro em JSON e paginação, ver índices da coleção, amostra rápida.
-- **Redis**: listar chaves (com padrão e cursor), ler valores conforme o tipo da chave (string, hash, lista, set, sorted set, **stream** e **RedisJSON**), com decode seguro de binário e teto de bytes por valor; amostra rápida.
+Expõe seus bancos para um assistente de IA de forma segura: listar estruturas, inspecionar metadados/índices e **executar apenas leituras** (`SELECT`/`WITH` no SQL, `find` no MongoDB, leitura por tipo no Redis), sempre com limite de linhas e timeout. Muitas respostas trazem `structuredContent` (JSON) além do texto.
 
-Em muitas respostas o cliente recebe também **`structuredContent`** (JSON estruturado) além do texto, para quem consome colunas, linhas, documentos ou chaves sem depender só de texto formatado.
+| Tool | O que faz |
+|------|-----------|
+| `db_list_connections` | Lista os `connection_id` configurados (tipo e `read_only`). Use primeiro, para escolher o id. |
+| `db_list_resources` | Tabelas (SQL), coleções (MongoDB, exige `database`) ou chaves (Redis; `key_pattern`/`cursor`). |
+| `db_get_metadata` | Colunas da tabela (SQL), amostra de documentos (MongoDB) ou tipo+amostra da chave (Redis). |
+| `db_describe_indexes` | Índices de uma tabela SQL ou coleção MongoDB. |
+| `db_query_sql` | Executa `SELECT`/`WITH`. `output_format`: `table`/`json`/`csv`; `limit` opcional. |
+| `db_fetch_documents` | MongoDB: `find` com `filter_json`, `limit`, `skip`. |
+| `db_read_cache` | Redis: leitura conforme o tipo da chave (string, hash, list, set, zset, stream, RedisJSON). |
+| `db_peek_sample` | Até três registros de amostra (linhas, documentos ou valores). |
 
-Comportamento padrão: **somente leitura** no SQL; tamanho de query, timeout e número de linhas/registros têm defaults globais no YAML (bloco `defaults`) e podem ser sobrescritos por conexão (veja abaixo).
+Recurso MCP `nautilus://connections`: JSON com a lista de conexões.
 
-## Tools
+## Requisitos
 
-| Tool | Função |
-|------|--------|
-| **`db_list_connections`** | Lista os `connection_id` configurados, tipo de engine e `read_only`. Use antes das demais tools para escolher o id correto. |
-| **`db_list_resources`** | SQL: tabelas. MongoDB: coleções (parâmetro `database` obrigatório). Redis: chaves (`key_pattern` e `cursor` opcionais). |
-| **`db_get_metadata`** | SQL: metadados/colunas da tabela. MongoDB: amostra de documentos. Redis: tipo e amostra do valor da chave. |
-| **`db_describe_indexes`** | Índices de uma tabela SQL ou de uma coleção MongoDB. |
-| **`db_query_sql`** | Executa `SELECT`/`WITH` em conexões SQL. `output_format`: `table`, `json` ou `csv`; `limit` opcional (respeitando o teto global). |
-| **`db_fetch_documents`** | MongoDB: `find` com `filter_json`, `limit` e `skip`. |
-| **`db_read_cache`** | Redis: leitura conforme o tipo da chave. |
-| **`db_peek_sample`** | Até três registros: linhas (SQL), documentos (MongoDB) ou amostra (Redis). |
+- **Python 3.11+**.
+- Os drivers de todos os bancos suportados já vêm incluídos — não há extras a instalar.
 
-## Resources (MCP)
-
-| URI | Conteúdo |
-|-----|----------|
-| **`nautilus://connections`** | JSON com `{ "connections": [...] }` (mesmos campos que `db_list_connections`: `connection_id`, `type`, `read_only`). |
-
-## Como configurar as conexões
-
-As conexões ficam num **único arquivo YAML**. O servidor lê o caminho de `NAUTILUS_CONFIG` (padrão `./nautilus.yaml`) e **valida na subida, falhando cedo** com mensagem clara se algo estiver inconsistente. Veja `nautilus.yaml.example` para um modelo completo.
-
-Cada conexão tem um **identificador** (`connection_id`): letras, números e underscores (ex.: `pg_prod`, `mongo_app`).
-
-> **A senha fica cifrada no YAML.** O campo `password` **só** é aceito cifrado (formato `enc:...`); texto puro é recusado na subida. Para gravar uma senha, use o CLI `nautilus` (abaixo), que a cifra com a chave `NAUTILUS_KEY` antes de escrever no arquivo. Não há interpolação de `${VAR}`: todos os demais campos (`host`, `user`, `database`, `url`) vão **literais** no YAML. Os únicos valores lidos do ambiente são `NAUTILUS_CONFIG` e `NAUTILUS_KEY`.
-
-### Cadastrar conexões pelo CLI
-
-Toda **adição, alteração e remoção** de conexão passa pelo CLI — ele edita o `nautilus.yaml` e cifra a senha na hora. A chave de criptografia vive **fora** do YAML, na variável `NAUTILUS_KEY` (sem ela, o valor cifrado é inútil).
+## Instalação
 
 ```bash
-# 1. Gere a chave uma vez e exporte-a no ambiente (guarde-a com segurança)
-nautilus keygen                       # imprime a chave; defina NAUTILUS_KEY com ela
+# Executar direto (sem instalar), via uv:
+uvx nautilus-mcp-server
 
-# 2. Gerencie as conexões (a senha é pedida de forma oculta e cifrada ao salvar)
-nautilus add pg_prod                  # pergunta type/host/port/user/senha/database
-nautilus list                         # lista as conexões (nunca mostra a senha)
-nautilus edit pg_prod                 # altera campos; senha em branco mantém a atual
-nautilus remove pg_prod               # remove a conexão
-
-# Use --config para apontar outro arquivo (padrão: NAUTILUS_CONFIG ou ./nautilus.yaml)
-nautilus --config C:/caminho/nautilus.yaml list
+# Ou instalar as ferramentas (servidor + CLI `nautilus`) no sistema:
+uv tool install nautilus-mcp-server
+# (alternativa: pip install nautilus-mcp-server)
 ```
 
-> **Importante:** a **mesma** `NAUTILUS_KEY` usada no `nautilus add` precisa estar no ambiente do servidor — é com ela que o Nautilus decifra as senhas ao subir. Troca de chave implica regravar as senhas.
+## Configuração
 
-### Estrutura
+### 1. Gere a chave de criptografia (uma vez)
+
+```bash
+nautilus keygen           # imprime a chave; guarde-a e use como NAUTILUS_KEY
+```
+
+### 2. Cadastre as conexões pelo CLI
+
+Toda adição/alteração/remoção passa pelo CLI `nautilus`, que edita o YAML e **cifra a senha** ao salvar:
+
+```bash
+nautilus add pg_prod      # pergunta type/host/port/user/senha/database (senha oculta)
+nautilus list             # lista as conexões (nunca mostra a senha)
+nautilus edit pg_prod     # altera campos; senha em branco mantém a atual
+nautilus remove pg_prod   # remove a conexão
+# --config aponta outro arquivo (padrão: NAUTILUS_CONFIG ou ./nautilus.yaml)
+```
+
+O arquivo resultante (veja [`nautilus.yaml.example`](./nautilus.yaml.example)):
 
 ```yaml
-defaults:                 # valores herdados por todas as conexões (todos opcionais)
+defaults:                  # herdados por todas as conexões (opcionais)
   read_only: true
   query_timeout_ms: 30000
-  connect_timeout_ms: 5000
   max_rows: 200
-  default_rows: 50
-  query_max_length: 2000
-
 connections:
-  <connection_id>:
-    type: <engine>        # obrigatório
-    # ...atributos da conexão...
-```
-
-### Por conexão
-
-- **`type`** (obrigatório): um entre `postgresql`, `mysql`, `mariadb` (tratado como MySQL), `sqlite`, `sqlserver`, `oracle`, `mongodb`, `redis`.
-- **Conexão**, em um dos dois formatos:
-  - **`url`**: URL completa (ex.: `postgresql://user:senha@host:5432/banco`). Para SQLite use `url: ":memory:"` ou `url: "file:..."`, ou o atalho `path:`.
-  - **Ou campos separados** (útil se a senha tem `@`, `:`, `/`): `host`, `port`, `user`, `password`, `database` (ou `db`). A porta pode ir junto em `host` (`db.exemplo.com:3306`); omitida, usa-se a padrão por tipo (PostgreSQL 5432, MySQL 3306, SQL Server 1433, Oracle 1521, MongoDB 27017, Redis 6379).
-- **Overrides opcionais do `defaults`**: `read_only`, `query_timeout_ms`, `connect_timeout_ms`. Redis aceita ainda `socket_timeout_ms` (teto por operação; padrão = `query_timeout_ms`).
-
-### Exemplos
-
-PostgreSQL por URL, com timeout maior só nesta conexão:
-
-```yaml
-connections:
-  pg:
-    type: postgresql
-    url: "postgresql://leitor:senha@db.interno:5432/vendas"
-    query_timeout_ms: 60000
-```
-
-PostgreSQL por componentes, não somente-leitura (a senha cifrada foi gravada por `nautilus add`/`edit`):
-
-```yaml
-connections:
-  pg_app:
-    type: postgresql
-    host: localhost
+  pg_prod:
+    type: postgresql       # postgresql | mysql | mariadb | sqlite | sqlserver | oracle | mongodb | redis
+    host: db.interno
     port: 5432
-    user: myuser
-    password: "enc:gAAAAAB..."   # gerado pelo CLI; nunca edite à mão
-    database: mydb
-    read_only: false
+    user: leitor
+    password: "enc:gAAAAAB..."   # gravado pelo CLI — cifrado, nunca à mão
+    database: vendas
 ```
 
-Redis com teto de operação:
+- Conexão por **componentes** (`host`/`port`/`user`/`password`/`database`) ou por **`url`** completa. SQLite usa `url: ":memory:"`/`"file:..."` ou `path:`.
+- Overrides por conexão: `read_only`, `query_timeout_ms`, `connect_timeout_ms` (Redis: `socket_timeout_ms`).
+- **Sem `${VAR}`**: todos os valores vão literais no YAML; só a senha é cifrada.
 
-```yaml
-connections:
-  cache:
-    type: redis
-    url: "redis://cache.interno:6379/0"
-    socket_timeout_ms: 10000
-```
+### 3. Aponte o cliente MCP para o servidor
 
-## Como usar nos clientes
-
-Em qualquer cliente MCP com transporte **stdio**, configure:
-
-- **Comando**: `npx` (no Windows, se necessário, use o caminho completo de `npx.cmd`).
-- **Argumentos**: use `["-y", "nautilus-mcp-server@latest"]`. Opcionalmente fixe versão com `["-y", "nautilus-mcp-server@<versão>"]`.
-- **Variáveis de ambiente** (as únicas): `NAUTILUS_CONFIG` (caminho do YAML) e `NAUTILUS_KEY` (chave que decifra as senhas — **obrigatória** se houver `password: enc:...`). Nenhum outro valor é lido do ambiente.
-
-Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
+As **únicas** variáveis de ambiente são `NAUTILUS_CONFIG` (caminho do YAML) e `NAUTILUS_KEY` (a mesma chave do `keygen`, que decifra as senhas):
 
 ```json
 {
   "mcpServers": {
     "nautilus": {
-      "command": "npx",
-      "args": ["-y", "nautilus-mcp-server@latest"],
+      "command": "uvx",
+      "args": ["nautilus-mcp-server"],
       "env": {
         "NAUTILUS_CONFIG": "C:/caminho/para/nautilus.yaml",
         "NAUTILUS_KEY": "a-chave-gerada-por-nautilus-keygen"
@@ -147,18 +95,10 @@ Exemplo de trecho JSON (Cursor, VS Code com MCP, etc.):
 }
 ```
 
-### Cursor
+O mesmo bloco `command`/`args`/`env` vale para Cursor, Claude Desktop, Claude Code e outras IDEs com MCP por stdio.
 
-**Configurações → MCP** (ou JSON de MCP do projeto): adicione o servidor com `command`, `args` e `env` como acima.
+## Segurança
 
-### Claude Desktop
-
-Use o mesmo esquema de `command`, `args` e `env` no arquivo de configuração MCP do aplicativo. Caminho e formato exato variam por sistema; veja a [documentação da Anthropic sobre MCP](https://docs.anthropic.com/en/docs/agents-and-tools/mcp).
-
-### Claude Code e outras IDEs
-
-Mesma ideia: processo `npx` (ou Node apontando para o pacote instalado), argumentos `-y` e `nautilus-mcp-server@latest`, e o mesmo bloco de variáveis de ambiente.
-
-### Problemas comuns no Windows com `npx`
-
-Se aparecer **`EPERM`**, **`TAR_ENTRY_ERROR`** ou **`MODULE_NOT_FOUND`** (por exemplo em dependências sob o cache do npm), feche o cliente MCP, apague a pasta **`%LocalAppData%\npm-cache\_npx`** e tente de novo. Outra opção estável é instalar o pacote globalmente (`npm install -g nautilus-mcp-server`) e configurar o MCP para executar o **`node`** com o caminho do `cli.js` dessa instalação global, em vez de `npx`.
+- **Somente leitura** por padrão no SQL (validação bloqueia escrita); `read_only: false` libera por conexão.
+- Senha **sempre cifrada** no YAML (`enc:`, Fernet); a chave vive só em `NAUTILUS_KEY`, fora do arquivo.
+- Limite de linhas e timeout por consulta; decode seguro de binário no Redis.
