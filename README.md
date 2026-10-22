@@ -40,8 +40,10 @@ uv tool install nautilus-mcp-server
 ### 1. Gere a chave de criptografia (uma vez)
 
 ```bash
-nautilus keygen           # imprime a chave; guarde-a e use como NAUTILUS_KEY
+nautilus keygen           # gera e salva a chave em ~/.nautilus/key
 ```
+
+Servidor e CLI leem a chave desse arquivo — **não precisa setar nada no ambiente**. (Em CI/containers, `NAUTILUS_KEY` no ambiente tem precedência sobre o arquivo.)
 
 ### 2. Cadastre as conexões pelo CLI
 
@@ -78,7 +80,7 @@ connections:
 
 ### 3. Aponte o cliente MCP para o servidor
 
-As **únicas** variáveis de ambiente são `NAUTILUS_CONFIG` (caminho do YAML) e `NAUTILUS_KEY` (a mesma chave do `keygen`, que decifra as senhas):
+Basta apontar `NAUTILUS_CONFIG` para o YAML — a chave vem do arquivo `~/.nautilus/key` gerado no passo 1, sem precisar de `NAUTILUS_KEY` no ambiente:
 
 ```json
 {
@@ -87,8 +89,7 @@ As **únicas** variáveis de ambiente são `NAUTILUS_CONFIG` (caminho do YAML) e
       "command": "uvx",
       "args": ["nautilus-mcp-server"],
       "env": {
-        "NAUTILUS_CONFIG": "C:/caminho/para/nautilus.yaml",
-        "NAUTILUS_KEY": "a-chave-gerada-por-nautilus-keygen"
+        "NAUTILUS_CONFIG": "C:/caminho/para/nautilus.yaml"
       }
     }
   }
@@ -100,5 +101,5 @@ O mesmo bloco `command`/`args`/`env` vale para Cursor, Claude Desktop, Claude Co
 ## Segurança
 
 - **Somente leitura** por padrão no SQL (validação bloqueia escrita); `read_only: false` libera por conexão.
-- Senha **sempre cifrada** no YAML (`enc:`, Fernet); a chave vive só em `NAUTILUS_KEY`, fora do arquivo.
+- Senha **sempre cifrada** no YAML (`enc:`, Fernet); a chave vive em `~/.nautilus/key` (ou `NAUTILUS_KEY`), **fora do YAML** — não compartilhe/commite o arquivo de chave.
 - Limite de linhas e timeout por consulta; decode seguro de binário no Redis.

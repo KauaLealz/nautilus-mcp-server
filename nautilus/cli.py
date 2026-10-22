@@ -143,11 +143,11 @@ def _resolve_path(args) -> str:
 
 def _handle_keygen(args) -> int:
     key = crypto.generate_key()
-    print(key)
+    path = crypto.write_key_file(key, force=args.force)
+    print(f"Chave gerada e salva em {path}.")
+    print(f"Servidor e CLI a leem daí — não precisa de variável de ambiente.")
     print(
-        f"\nExporte-a antes de subir o servidor ou usar o CLI:\n"
-        f"  PowerShell:  $env:{crypto.KEY_ENV} = \"{key}\"\n"
-        f"  bash:        export {crypto.KEY_ENV}=\"{key}\"",
+        f"\n(backup — guarde em local seguro; para CI defina {crypto.KEY_ENV}):\n  {key}",
         file=sys.stderr,
     )
     return 0
@@ -206,7 +206,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", help=f"caminho do YAML (padrão: NAUTILUS_CONFIG ou {DEFAULT_CONFIG_PATH})")
     sub = p.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("keygen", help="gera uma chave NAUTILUS_KEY").set_defaults(func=_handle_keygen)
+    kg = sub.add_parser("keygen", help="gera e salva a chave de criptografia")
+    kg.add_argument("--force", action="store_true", help="substitui a chave existente (invalida senhas já cifradas)")
+    kg.set_defaults(func=_handle_keygen)
 
     a = sub.add_parser("add", help="adiciona uma conexão")
     a.add_argument("id", nargs="?", help="connection_id")

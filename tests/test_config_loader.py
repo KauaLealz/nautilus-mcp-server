@@ -10,6 +10,11 @@ def _write(tmp_path, text):
     return str(p)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_key(tmp_path, monkeypatch):
+    monkeypatch.setenv(crypto.KEY_FILE_ENV, str(tmp_path / "keyfile"))
+
+
 @pytest.fixture
 def key(monkeypatch):
     k = crypto.generate_key()
