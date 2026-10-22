@@ -1,11 +1,11 @@
 [project]
 name = "nautilus-mcp-server"
-version = "0.4.1"
+version = "0.4.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.27.2",
+    "mcp>=1.27.2,<2",
     "cryptography>=43.0",
     "oracledb>=4.0.1",
     "psycopg[binary]>=3.3.4",

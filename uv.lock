@@ -341,7 +341,7 @@ wheels = [
 
 [[package]]
 name = "nautilus-mcp-server"
-version = "0.3.0"
+version = "0.4.2"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
@@ -365,7 +365,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=43.0" },
-    { name = "mcp", specifier = ">=1.27.2" },
+    { name = "mcp", specifier = ">=1.27.2,<2" },
     { name = "oracledb", specifier = ">=4.0.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pymongo", specifier = ">=4.17.0" },
