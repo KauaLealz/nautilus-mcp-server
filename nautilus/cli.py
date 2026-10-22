@@ -17,13 +17,12 @@ import sys
 import yaml
 
 from nautilus.config import crypto
+from nautilus.config.loader import DEFAULT_CONFIG_PATH
 from nautilus.config.url_builder import SUPPORTED_ENGINES
-
-DEFAULT_CONFIG_PATH = "nautilus.yaml"
 
 _HEADER = (
     "# Gerido pelo CLI `nautilus` — não edite a senha à mão.\n"
-    "# As senhas ficam cifradas (enc:...); a chave vive em NAUTILUS_KEY.\n"
+    "# As senhas ficam cifradas (enc:...); a chave vive em ~/.nautilus/key.\n"
 )
 
 
@@ -42,6 +41,7 @@ def read_yaml(path: str) -> dict:
 
 
 def write_yaml(path: str, data: dict) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(_HEADER)
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)

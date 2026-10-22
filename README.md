@@ -80,7 +80,7 @@ connections:
 
 ### 3. Aponte o cliente MCP para o servidor
 
-Basta apontar `NAUTILUS_CONFIG` para o YAML — a chave vem do arquivo `~/.nautilus/key` gerado no passo 1, sem precisar de `NAUTILUS_KEY` no ambiente:
+**Nenhuma variável de ambiente é necessária.** Por padrão, o servidor lê o YAML de `~/.nautilus/nautilus.yaml` e a chave de `~/.nautilus/key` — ambos criados pelos passos acima:
 
 ```json
 {
@@ -88,15 +88,15 @@ Basta apontar `NAUTILUS_CONFIG` para o YAML — a chave vem do arquivo `~/.nauti
     "nautilus": {
       "command": "uvx",
       "args": ["nautilus-mcp-server"],
-      "env": {
-        "NAUTILUS_CONFIG": "C:/caminho/para/nautilus.yaml"
-      }
+      "env": {}
     }
   }
 }
 ```
 
-O mesmo bloco `command`/`args`/`env` vale para Cursor, Claude Desktop, Claude Code e outras IDEs com MCP por stdio.
+O mesmo bloco vale para Cursor, Claude Desktop, Claude Code e outras IDEs com MCP por stdio.
+
+> **Caminhos personalizados (opcional):** `NAUTILUS_CONFIG` aponta o YAML para outro lugar; `NAUTILUS_KEY` (ou `NAUTILUS_KEY_FILE`) define a chave para CI/containers. Sem eles, usa-se o padrão em `~/.nautilus/`.
 
 ## Segurança
 

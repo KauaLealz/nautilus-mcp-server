@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import yaml
 
@@ -12,7 +13,9 @@ from nautilus.config.crypto import is_encrypted, decrypt, CryptoError
 
 logger = logging.getLogger("nautilus")
 
-DEFAULT_CONFIG_PATH = "nautilus.yaml"
+# Local padrão do YAML de conexões — gerido pelo CLI. Env NAUTILUS_CONFIG só
+# para apontar outro caminho.
+DEFAULT_CONFIG_PATH = str(Path.home() / ".nautilus" / "nautilus.yaml")
 
 # Defaults de fábrica, usados quando o bloco `defaults` do YAML não os define.
 FACTORY_DEFAULTS = {
