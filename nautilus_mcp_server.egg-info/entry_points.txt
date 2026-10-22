@@ -1,0 +1,3 @@
+[console_scripts]
+nautilus = nautilus.cli:main
+nautilus-mcp-server = nautilus.server.app:main
