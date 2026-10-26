@@ -11,6 +11,15 @@ class MongodbAdapter:
         self.timeout_ms = timeout_ms
         self.clients = {}
 
+    def close_all(self):
+        """Fecha todos os clients abertos — usado ao recarregar a config."""
+        for client in self.clients.values():
+            try:
+                client.close()
+            except Exception:
+                pass
+        self.clients.clear()
+
     def get_client(self, connection_id: str):
         client = self.clients.get(connection_id)
         if client is not None:

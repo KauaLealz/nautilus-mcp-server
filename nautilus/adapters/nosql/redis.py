@@ -48,6 +48,15 @@ class RedisAdapter:
         self.timeout_ms = timeout_ms
         self.clients = {}
 
+    def close_all(self):
+        """Fecha todos os clients abertos — usado ao recarregar a config."""
+        for client in self.clients.values():
+            try:
+                client.close()
+            except Exception:
+                pass
+        self.clients.clear()
+
     def _build_client(self, connection_id):
         cfg = self.configs.get(connection_id)
         if not cfg:

@@ -32,6 +32,15 @@ class MssqlAdapter:
         self.configs = configs
         self.conns = {}
 
+    def close_all(self):
+        """Fecha todas as conexões abertas — usado ao recarregar a config."""
+        for conn in self.conns.values():
+            try:
+                conn.close()
+            except Exception:
+                pass
+        self.conns.clear()
+
     def get_conn(self, connection_id: str):
         conn = self.conns.get(connection_id)
         if conn is not None:

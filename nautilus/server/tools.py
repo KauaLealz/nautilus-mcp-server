@@ -4,9 +4,7 @@ from typing import Optional
 
 from nautilus.server.app import (
     mcp,
-    settings,
-    databases,
-    sql_validator,
+    get_state,
     resolve_connection_id,
     get_db_adapter,
     deep_sanitize,
@@ -20,6 +18,7 @@ logger = logging.getLogger("nautilus")
 @mcp.tool(name="db_list_connections")
 def db_list_connections() -> str:
     logger.info("Listando conexões de banco de dados disponíveis.")
+    databases = get_state()["databases"]
     connections = [{"connection_id": cid, "type": cfg["type"], "read_only": cfg["read_only"]} for cid, cfg in databases.items()]
     if not connections:
         logger.warning("Nenhuma conexão configurada encontrada.")
@@ -62,7 +61,7 @@ def db_list_resources(
 
     elif engine == "redis":
         pat = key_pattern or "*"
-        res = adapter.scan_keys(cid, pat, settings["max_row_limit"], cursor)
+        res = adapter.scan_keys(cid, pat, get_state()["settings"]["max_row_limit"], cursor)
         lines = [f"  - {k}" for k in res["keys"]]
         out = f"Chaves encontradas (padrao '{pat}'):\n" + "\n".join(lines)
         if res.get("nextCursor"):
@@ -143,13 +142,14 @@ def db_query_sql(
     logger.info(f"Executando query SQL na conexão {connection_id}. Query original: {query.strip()}")
     cid = resolve_connection_id(connection_id)
     adapter, engine = get_db_adapter(cid)
+    settings = get_state()["settings"]
 
     if engine not in {"sqlite", "postgresql", "mysql", "sqlserver", "oracle"}:
         logger.warning(f"Tentativa de executar query SQL em banco não SQL. Engine: {engine}")
         return "db_query_sql so se aplica a conexoes SQL."
 
     try:
-        validated_query = sql_validator.sanitize_or_raise(query)
+        validated_query = get_state()["sql_validator"].sanitize_or_raise(query)
     except QuerySafetyError as e:
         logger.error(f"Erro de segurança ao validar query SQL: {e}")
         return f"Erro de seguranca: {str(e)}"
@@ -190,6 +190,7 @@ def db_fetch_documents(
     if engine != "mongodb":
         return "db_fetch_documents so se aplica a conexao MongoDB."
 
+    settings = get_state()["settings"]
     cap = settings["max_row_limit"]
     lim = limit if (limit is not None and limit > 0) else settings["default_row_limit"]
     lim = min(max(1, lim), cap)
@@ -214,6 +215,7 @@ def db_read_cache(
     if engine != "redis":
         return "db_read_cache so se aplica a conexao Redis."
 
+    settings = get_state()["settings"]
     cap = max_elements if (max_elements is not None and max_elements > 0) else settings["default_row_limit"]
     cap = min(cap, settings["max_row_limit"])
 

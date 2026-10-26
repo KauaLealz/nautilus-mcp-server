@@ -14,6 +14,15 @@ class SqliteAdapter:
         self.configs = configs
         self.conns = {}
 
+    def close_all(self):
+        """Fecha todas as conexões abertas — usado ao recarregar a config."""
+        for conn in self.conns.values():
+            try:
+                conn.close()
+            except Exception:
+                pass
+        self.conns.clear()
+
     def get_conn(self, connection_id: str):
         if connection_id not in self.conns:
             cfg = self.configs.get(connection_id)
